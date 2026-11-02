@@ -100,7 +100,6 @@ insert into customers (name) values ('Corbets Group');
 insert into customers (name) values ('CPM EQUESTRIAN');
 insert into customers (name) values ('CRYSTAL CANYON PTY LTD. HEAVY HAULAGE ASSETS QLD');
 insert into customers (name) values ('CUSTOM CONCEPTS OFF ROAD');
-insert into customers (name) values ('Customer');
 insert into customers (name) values ('CW STEEL AND ALLOY');
 insert into customers (name) values ('DAIMLER TRUCKS ( SUNNY COAST )');
 insert into customers (name) values ('DARRENBARNETT');

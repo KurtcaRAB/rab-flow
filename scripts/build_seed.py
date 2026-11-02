@@ -81,7 +81,8 @@ for r in rows[price_head + 1:]:
         else:
             extras.append({"name": pretty, "unit_cost": round(r[8], 2), "unit_charge": round(r[9], 2)})
 
-customers = sorted({r[0].strip() for r in cust_ws.iter_rows(min_row=3, values_only=True) if r[0]},
+customers = sorted({r[0].strip() for r in cust_ws.iter_rows(min_row=2, values_only=True)
+                  if r[0] and r[0].strip() != "Customer"},
                    key=str.casefold)
 stages = ["Wash Bay", "Blast Room", "Handling", "Prep", "Prime", "Paint", "QA"]
 
