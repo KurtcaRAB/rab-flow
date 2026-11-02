@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-preview
+.env
+.env.local
+
+# Staff mobile numbers are personal details: keep them out of git.
+supabase/staff.csv

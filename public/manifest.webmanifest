@@ -1,0 +1,8 @@
+{
+  "name": "RAB Flow",
+  "short_name": "RAB Flow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#E8590C"
+}
