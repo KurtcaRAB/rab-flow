@@ -2,7 +2,13 @@
 // app, but stored in this browser only. Seeded from Kurt's lists.
 import seed from '../demo-seed.json';
 import { normaliseMobile } from './auth';
-import type { Api, Staff, Stage, TableName, Tables } from './types';
+import { blobToDataUrl, shrinkPhoto } from './photos';
+import type {
+  Api, Job, JobCard, LabourEntry, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
+} from './types';
+
+type DemoPhoto = Omit<JobPhoto, 'url'> & { data: string };
+type DemoEvent = Omit<JobEvent, 'by_name'> & { job_id: number; by: string | null };
 
 export const DEMO_PIN = '123456';
 
@@ -14,6 +20,12 @@ interface Store {
   materials: Tables['materials'][];
   labour_rates: Tables['labour_rates'][];
   extras: Tables['extras'][];
+  jobs: Job[];
+  job_items: JobItem[];
+  job_photos: DemoPhoto[];
+  job_events: DemoEvent[];
+  labour: Omit<LabourEntry, 'staff_name'>[];
+  nextJobNumber: number;
   nextId: number;
 }
 
@@ -44,6 +56,7 @@ function fresh(): Store {
       charge_per_hour: r.charge_per_hour, is_default: r.is_default, active: true,
     })),
     extras: seed.extras.map((e) => ({ id: id++, ...e, active: true })),
+    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1,
     nextId: id,
   };
 }
@@ -51,7 +64,10 @@ function fresh(): Store {
 function load(): Store {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      // Stores saved before jobs existed get empty job lists.
+      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1, ...JSON.parse(raw) };
+    }
   } catch { /* storage blocked: fall back to fresh data */ }
   return fresh();
 }
@@ -65,6 +81,46 @@ export function demoApi(): Api {
   const strip = ({ pin: _pin, ...s }: Staff & { pin: string }): Staff => s;
   const office = () => !!me?.groups.includes('office');
   const later = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 120));
+  const now = () => new Date().toISOString();
+  const nameOf = (id: string | null) => store.staff.find((s) => s.id === id)?.name ?? null;
+  const signedIn = () => { if (!me) throw new Error('Please sign in again.'); return me; };
+  const event = (job_id: number, kind: string, detail: string) =>
+    store.job_events.push({ id: store.nextId++, job_id, kind, detail, by: me?.id ?? null, at: now() });
+
+  async function savePhotos(jobId: number, photos: Blob[], stage: PhotoStage, itemId: number | null) {
+    for (const p of photos) {
+      // Small copies: this preview keeps everything in browser storage.
+      const data = await blobToDataUrl(await shrinkPhoto(p, 480, 0.6));
+      store.job_photos.push({ id: store.nextId++, job_id: jobId, item_id: itemId, stage, taken_by: me?.id ?? null, taken_at: now(), data });
+    }
+  }
+
+  function addItemRow(jobId: number, { photos: _p, ...item }: NewItem): JobItem {
+    const row: JobItem = { ...item, id: store.nextId++, job_id: jobId, added_by: me?.id ?? null, added_at: now() };
+    store.job_items.push(row);
+    return row;
+  }
+
+  function card(j: Job): JobCard {
+    const photos = store.job_photos.filter((p) => p.job_id === j.id)
+      .sort((a, b) => (a.stage === 'Intake' ? 0 : 1) - (b.stage === 'Intake' ? 0 : 1) || a.taken_at.localeCompare(b.taken_at));
+    return {
+      ...j,
+      customer_name: store.customers.find((c) => c.id === j.customer_id)?.name ?? '',
+      location_name: store.yard_locations.find((l) => l.id === j.location_id)?.name ?? null,
+      items: store.job_items.filter((i) => i.job_id === j.id)
+        .map(({ description, serial_number, quantity }) => ({ description, serial_number, quantity })),
+      cover_url: photos[0]?.data ?? null,
+    };
+  }
+
+  function persistOrWarn() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(store));
+    } catch {
+      throw new Error('This preview has run out of browser storage for photos. Saved for this visit only.');
+    }
+  }
 
   return {
     mode: 'demo',
@@ -126,6 +182,111 @@ export function demoApi(): Api {
       if (!office()) throw new Error('Only Office staff can manage staff.');
       store.staff.find((x) => x.id === id)!.pin = pin;
       persist();
+    },
+
+    async jobs({ includeCollected }) {
+      const rows = store.jobs.filter((j) => includeCollected || j.status !== 'Collected')
+        .sort((a, b) => b.date_in.localeCompare(a.date_in));
+      return later(rows.map(card));
+    },
+
+    async job(id) {
+      const j = store.jobs.find((x) => x.id === id);
+      if (!j) throw new Error('Job not found.');
+      return later({
+        ...card(j),
+        created_by_name: nameOf(j.created_by),
+        item_rows: store.job_items.filter((i) => i.job_id === id),
+        photos: store.job_photos.filter((p) => p.job_id === id).map(({ data, ...p }) => ({ ...p, url: data })),
+        events: store.job_events.filter((e) => e.job_id === id).reverse()
+          .map(({ by, job_id: _j, ...e }) => ({ ...e, by_name: nameOf(by) })),
+      });
+    },
+
+    async createJob({ photos, items, ...input }) {
+      const who = signedIn();
+      if (!input.quote_number.trim()) throw new Error('Enter the quote number.');
+      const job: Job = {
+        ...input, id: store.nextId++, job_number: `RAB-${String(store.nextJobNumber++).padStart(4, '0')}`,
+        status: 'Booked in', date_in: now(), date_out: null, created_by: who.id,
+      };
+      store.jobs.push(job);
+      event(job.id, 'booked_in', 'Booked in');
+      await savePhotos(job.id, photos, 'Intake', null);
+      for (const item of items) {
+        const row = addItemRow(job.id, item);
+        await savePhotos(job.id, item.photos, 'Intake', row.id);
+      }
+      persistOrWarn();
+      return later({ id: job.id, photoErrors: 0 });
+    },
+
+    async updateJob(id, patch: JobPatch) {
+      signedIn();
+      const j = store.jobs.find((x) => x.id === id)!;
+      const locName = (l: number | null) => store.yard_locations.find((x) => x.id === l)?.name ?? 'No location';
+      if (patch.status && patch.status !== j.status) {
+        event(id, 'status', `${j.status} → ${patch.status}`);
+        j.date_out = patch.status === 'Collected' ? now() : null;
+      }
+      if (patch.location_id !== undefined && patch.location_id !== j.location_id) {
+        event(id, 'location', `${locName(j.location_id)} → ${locName(patch.location_id)}`);
+      }
+      if (patch.po_number !== undefined && patch.po_number !== j.po_number) {
+        event(id, 'po', `PO number ${patch.po_number || 'removed'}`);
+      }
+      Object.assign(j, patch);
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async addItem(jobId, item) {
+      signedIn();
+      const row = addItemRow(jobId, item);
+      event(jobId, 'item_added', `Item added: ${row.description}${row.serial_number ? ` (S/N ${row.serial_number})` : ''}`);
+      await savePhotos(jobId, item.photos, 'Intake', row.id);
+      persistOrWarn();
+      return later(0);
+    },
+
+    async addPhotos(jobId, photos, { stage, itemId }) {
+      signedIn();
+      await savePhotos(jobId, photos, stage, itemId ?? null);
+      persistOrWarn();
+      return later(0);
+    },
+
+    async labour(jobId) {
+      return later(store.labour.filter((l) => l.job_id === jobId)
+        .sort((a, b) => b.work_date.localeCompare(a.work_date) || b.id - a.id)
+        .map((l) => ({ ...l, staff_name: nameOf(l.staff_id) ?? '' })));
+    },
+
+    async logHours(e) {
+      const who = signedIn();
+      if (!(e.hours > 0 && e.hours <= 24)) throw new Error('Hours must be between 0 and 24.');
+      const staff_id = office() ? e.staff_id : who.id;
+      const rate = (office() && e.labour_rate_id) || store.labour_rates
+        .filter((r) => r.stage_id === e.stage_id && r.active).sort((a, b) => Number(b.is_default) - Number(a.is_default))[0]?.id || null;
+      store.labour.push({ ...e, id: store.nextId++, staff_id, labour_rate_id: rate });
+      // Logging hours moves the job to that stage.
+      const j = store.jobs.find((x) => x.id === e.job_id)!;
+      const stage = store.stages.find((s) => s.id === e.stage_id)!.name as Job['status'];
+      if (j.status !== stage && j.status !== 'Ready for pickup' && j.status !== 'Collected') {
+        event(j.id, 'status', `${j.status} → ${stage}`);
+        j.status = stage;
+      }
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async deleteHours(id) {
+      const who = signedIn();
+      const l = store.labour.find((x) => x.id === id);
+      if (l && l.staff_id !== who.id && !office()) throw new Error('You can only remove your own hours.');
+      store.labour = store.labour.filter((x) => x.id !== id);
+      persistOrWarn();
+      return later(undefined);
     },
   };
 }
