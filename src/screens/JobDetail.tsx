@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CustomerPicker, JobStatusChip, PhotoPicker, StagePicker, dateTime, shortDate } from '../jobUi';
 import { api } from '../lib/api';
 import {
-  PHOTO_STAGES, type Customer, type LabourEntry, type JobDetail as Detail, type JobStatus, type NewItem, type PhotoStage, type Stage,
+  PHOTO_STAGES, type Customer, type LabourEntry, type Material, type PaintEntry, type JobDetail as Detail, type JobStatus, type NewItem, type PhotoStage, type Stage,
   type Staff, type YardLocation,
 } from '../lib/types';
 import { ErrorText, Sheet, TopBar } from '../ui';
 import { ItemFields, blankItem, takeNotice } from './NewJob';
 import { HoursList, LogHours } from './LogHours';
+import { LogPaint, PaintList } from './LogPaint';
 
-type Tab = 'Items' | 'Hours' | 'Photos' | 'History';
+type Tab = 'Items' | 'Hours' | 'Paint' | 'Photos' | 'History';
+const QUEUED = 'No signal: saved on this phone. It will send by itself when you are back in signal.';
 
 export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; onBack: () => void }) {
   const isOffice = me.groups.includes('office');
@@ -17,17 +19,20 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
   const [stages, setStages] = useState<Stage[]>([]);
   const [locations, setLocations] = useState<YardLocation[]>([]);
   const [tab, setTab] = useState<Tab>('Items');
-  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | 'hours' | null>(null);
+  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | 'hours' | 'paint' | null>(null);
   const [hours, setHours] = useState<LabourEntry[]>([]);
+  const [paint, setPaint] = useState<PaintEntry[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
   const [notice, setNotice] = useState(takeNotice);
   const [error, setError] = useState('');
 
-  const reload = useCallback(() => Promise.all([api.job(id).then(setJob), api.labour(id).then(setHours)])
+  const reload = useCallback(() => Promise.all([api.job(id).then(setJob), api.labour(id).then(setHours), api.paint(id).then(setPaint)])
     .catch((e) => setError((e as Error).message)), [id]);
   useEffect(() => {
     reload();
     api.stages().then(setStages);
+    api.list('materials').then(setMaterials);
     api.list('yard_locations').then((l) => setLocations(l.filter((x) => x.active).sort((a, b) => a.sort_order - b.sort_order)));
   }, [reload]);
 
@@ -80,20 +85,24 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
         </section>
 
         <section className="grid grid-cols-2 gap-3">
-          {job.status !== 'Collected' && <button className="btn-primary" onClick={() => setSheet('hours')}>⏱ Log hours</button>}
+          {job.status !== 'Collected' && <>
+            <button className="btn-primary" onClick={() => setSheet('hours')}>⏱ Log hours</button>
+            <button className="btn-primary" onClick={() => setSheet('paint')}>🎨 Log paint</button>
+          </>}
           <button className="btn-ghost" onClick={() => setSheet('status')}>Move stage</button>
-          <select className="input col-span-2 font-semibold" aria-label="Yard location" value={job.location_id ?? ''}
+          <select className="input font-semibold" aria-label="Yard location" value={job.location_id ?? ''}
             onChange={(e) => update({ location_id: e.target.value ? Number(e.target.value) : null })}>
             <option value="">📍 No location</option>
             {locations.map((l) => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
           </select>
         </section>
 
-        <nav className="grid grid-cols-4 gap-1.5">
-          {(['Items', 'Hours', 'Photos', 'History'] as Tab[]).map((t) => (
-            <button key={t} className={`${tab === t ? 'btn-primary' : 'btn-ghost'} min-h-10 gap-1 whitespace-nowrap px-1 text-sm`} onClick={() => setTab(t)}>
+        <nav className="-mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {(['Items', 'Hours', 'Paint', 'Photos', 'History'] as Tab[]).map((t) => (
+            <button key={t} className={`${tab === t ? 'btn-primary' : 'btn-ghost'} min-h-10 shrink-0 grow gap-1 whitespace-nowrap px-3 text-sm`} onClick={() => setTab(t)}>
               {t}<span className="opacity-70">{t === 'Items' ? job.item_rows.length : t === 'Photos' ? job.photos.length
-                : t === 'Hours' && hours.length ? Math.round(hours.reduce((a, e) => a + e.hours, 0) * 10) / 10 : ''}</span>
+                : t === 'Hours' && hours.length ? Math.round(hours.reduce((a, e) => a + e.hours, 0) * 10) / 10
+                : t === 'Paint' && paint.length ? Math.round(paint.reduce((a, e) => a + e.litres, 0) * 10) / 10 : ''}</span>
             </button>
           ))}
         </nav>
@@ -133,6 +142,13 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
           <HoursList entries={hours} stages={stages} me={me} onDelete={async (eid) => {
             if (!window.confirm('Remove this hours entry?')) return;
             try { await api.deleteHours(eid); await reload(); } catch (e) { setError((e as Error).message); }
+          }} />
+        )}
+
+        {tab === 'Paint' && (
+          <PaintList entries={paint} materials={materials} me={me} onDelete={async (eid) => {
+            if (!window.confirm('Remove this paint entry?')) return;
+            try { await api.deletePaint(eid); await reload(); } catch (e) { setError((e as Error).message); }
           }} />
         )}
 
@@ -182,8 +198,12 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
         </Sheet>
       )}
       {sheet === 'hours' && (
-        <LogHours jobId={id} me={me} stages={stages} needed={job.stage_ids} onClose={() => setSheet(null)}
-          onSaved={async () => { setSheet(null); setTab('Hours'); await reload(); }} />
+        <LogHours jobId={id} jobNumber={job.job_number} me={me} stages={stages} needed={job.stage_ids} onClose={() => setSheet(null)}
+          onSaved={async (r) => { setSheet(null); setTab('Hours'); if (r === 'queued') setNotice(QUEUED); else await reload(); }} />
+      )}
+      {sheet === 'paint' && (
+        <LogPaint jobId={id} jobNumber={job.job_number} me={me} onClose={() => setSheet(null)}
+          onSaved={async (r) => { setSheet(null); setTab('Paint'); if (r === 'queued') setNotice(QUEUED); else await reload(); }} />
       )}
       {sheet === 'edit' && (
         <EditJob job={job} stages={stages} onClose={() => setSheet(null)}

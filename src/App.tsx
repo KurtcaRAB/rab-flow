@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './lib/api';
+import { clearFailures, flush, lastFailures, pending, subscribe } from './lib/outbox';
 import type { Staff } from './lib/types';
 import SignIn from './screens/SignIn';
 import Home from './screens/Home';
@@ -58,11 +59,39 @@ export default function App() {
           Preview with demo data. Changes stay in this browser only.
         </div>
       )}
+      <OutboxBar />
       {route.to === 'home' && <Home me={me} go={go} onSignOut={signOut} />}
       {route.to === 'new' && <NewJob onBack={back} onSaved={(id) => go({ to: 'job', id }, true)} />}
       {route.to === 'job' && <JobDetail key={route.id} id={route.id} me={me} onBack={back} />}
       {route.to === 'datasheets' && <DataSheets isOffice={isOffice} onBack={back} />}
       {route.to === 'settings' && (isOffice ? <Settings me={me} onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
+    </div>
+  );
+}
+
+/** Shows entries waiting on this phone for signal, and sends them when it returns. */
+function OutboxBar() {
+  const [waiting, setWaiting] = useState(pending().length);
+  const [failed, setFailed] = useState(lastFailures());
+  useEffect(() => {
+    const off = subscribe(() => { setWaiting(pending().length); setFailed(lastFailures()); });
+    const tick = () => { if (pending().length) flush(); };
+    tick();
+    window.addEventListener('online', tick);
+    const timer = setInterval(tick, 30_000);
+    return () => { off(); window.removeEventListener('online', tick); clearInterval(timer); };
+  }, []);
+  if (!waiting && !failed.length) return null;
+  return (
+    <div className="space-y-1 bg-sky-100 px-4 py-2 text-sm font-medium text-sky-900 dark:bg-sky-950 dark:text-sky-100">
+      {waiting > 0 && (
+        <div className="flex items-center justify-between gap-2">
+          <span>📶 {waiting} {waiting === 1 ? 'entry' : 'entries'} saved on this phone, waiting for signal.</span>
+          <button className="shrink-0 underline" onClick={() => flush()}>Send now</button>
+        </div>
+      )}
+      {failed.map((f) => <div key={f} className="text-red-700 dark:text-red-300">Not saved: {f}</div>)}
+      {failed.length > 0 && <button className="underline" onClick={clearFailures}>OK</button>}
     </div>
   );
 }

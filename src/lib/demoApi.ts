@@ -4,7 +4,7 @@ import seed from '../demo-seed.json';
 import { normaliseMobile } from './auth';
 import { blobToDataUrl, shrinkPhoto } from './photos';
 import type {
-  Api, Job, JobCard, LabourEntry, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
+  Api, Job, JobCard, LabourEntry, PaintEntry, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
 } from './types';
 
 type DemoPhoto = Omit<JobPhoto, 'url'> & { data: string };
@@ -25,6 +25,7 @@ interface Store {
   job_photos: DemoPhoto[];
   job_events: DemoEvent[];
   labour: Omit<LabourEntry, 'staff_name'>[];
+  paint: Omit<PaintEntry, 'staff_name'>[];
   nextJobNumber: number;
   nextId: number;
 }
@@ -56,7 +57,7 @@ function fresh(): Store {
       charge_per_hour: r.charge_per_hour, is_default: r.is_default, active: true,
     })),
     extras: seed.extras.map((e) => ({ id: id++, ...e, active: true })),
-    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1,
+    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], nextJobNumber: 1,
     nextId: id,
   };
 }
@@ -66,7 +67,7 @@ function load(): Store {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       // Stores saved before jobs existed get empty job lists.
-      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1, ...JSON.parse(raw) };
+      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], nextJobNumber: 1, ...JSON.parse(raw) };
     }
   } catch { /* storage blocked: fall back to fresh data */ }
   return fresh();
@@ -268,6 +269,7 @@ export function demoApi(): Api {
       const staff_id = office() ? e.staff_id : who.id;
       const rate = (office() && e.labour_rate_id) || store.labour_rates
         .filter((r) => r.stage_id === e.stage_id && r.active).sort((a, b) => Number(b.is_default) - Number(a.is_default))[0]?.id || null;
+      if (e.client_ref && store.labour.some((l) => (l as { client_ref?: string }).client_ref === e.client_ref)) return;
       store.labour.push({ ...e, id: store.nextId++, staff_id, labour_rate_id: rate });
       // Logging hours moves the job to that stage.
       const j = store.jobs.find((x) => x.id === e.job_id)!;
@@ -285,6 +287,30 @@ export function demoApi(): Api {
       const l = store.labour.find((x) => x.id === id);
       if (l && l.staff_id !== who.id && !office()) throw new Error('You can only remove your own hours.');
       store.labour = store.labour.filter((x) => x.id !== id);
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async paint(jobId) {
+      return later(store.paint.filter((l) => l.job_id === jobId)
+        .sort((a, b) => b.used_on.localeCompare(a.used_on) || b.id - a.id)
+        .map((l) => ({ ...l, staff_name: nameOf(l.staff_id) ?? '' })));
+    },
+
+    async logPaint(e) {
+      const who = signedIn();
+      if (!(e.litres > 0 && e.litres <= 1000)) throw new Error('Enter the litres used.');
+      if (e.client_ref && store.paint.some((l) => (l as { client_ref?: string }).client_ref === e.client_ref)) return;
+      store.paint.push({ ...e, id: store.nextId++, staff_id: office() ? e.staff_id : who.id });
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async deletePaint(id) {
+      const who = signedIn();
+      const l = store.paint.find((x) => x.id === id);
+      if (l && l.staff_id !== who.id && !office()) throw new Error('You can only remove your own entries.');
+      store.paint = store.paint.filter((x) => x.id !== id);
       persistOrWarn();
       return later(undefined);
     },

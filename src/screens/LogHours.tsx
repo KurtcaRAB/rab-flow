@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { saveOrQueue } from '../lib/outbox';
 import type { LabourEntry, LabourRate, Stage, Staff } from '../lib/types';
 import { ErrorText, Sheet } from '../ui';
 
@@ -7,8 +8,9 @@ const QUICK = [0.5, 1, 2, 4, 8];
 export const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
 /** Stage buttons, quick-pick hours, date and note. Office can log for someone else and pick the rate. */
-export function LogHours({ jobId, me, stages, needed, onClose, onSaved }: {
-  jobId: number; me: Staff; stages: Stage[]; needed: number[]; onClose: () => void; onSaved: () => void;
+export function LogHours({ jobId, jobNumber, me, stages, needed, onClose, onSaved }: {
+  jobId: number; jobNumber: string; me: Staff; stages: Stage[]; needed: number[]; onClose: () => void;
+  onSaved: (result: 'sent' | 'queued') => void;
 }) {
   const isOffice = me.groups.includes('office');
   const [stageId, setStageId] = useState<number | null>(null);
@@ -38,11 +40,15 @@ export function LogHours({ jobId, me, stages, needed, onClose, onSaved }: {
     if (!(h > 0 && h <= 24)) return setError('Enter the hours (up to 24).');
     setBusy(true); setError('');
     try {
-      await api.logHours({
-        job_id: jobId, stage_id: stageId, staff_id: staffId, work_date: date, hours: Math.round(h * 100) / 100,
-        note: note.trim() || null, labour_rate_id: rateId === '' ? null : rateId,
-      });
-      onSaved();
+      const hrs = Math.round(h * 100) / 100;
+      onSaved(await saveOrQueue({
+        kind: 'hours',
+        label: `${jobNumber} ${hrs} h ${stages.find((s) => s.id === stageId)?.name ?? ''}`,
+        data: {
+          job_id: jobId, stage_id: stageId, staff_id: staffId, work_date: date, hours: hrs,
+          note: note.trim() || null, labour_rate_id: rateId === '' ? null : rateId,
+        },
+      }));
     } catch (e) { setError((e as Error).message); setBusy(false); }
   }
 
