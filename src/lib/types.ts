@@ -88,6 +88,101 @@ export interface NewStaff {
   pin: string;
 }
 
+// ---------------------------------------------------------------------------
+// Jobs (phase 2)
+// ---------------------------------------------------------------------------
+
+// Where a job is: booked in, the stage being worked, then ready and collected.
+export const JOB_STATUSES = [
+  'Booked in', 'Wash Bay', 'Blast Room', 'Handling', 'Prep', 'Prime', 'Paint', 'QA', 'Ready for pickup', 'Collected',
+] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+/** When a photo was taken: at intake, during a stage, at QA or on the way out. */
+export type PhotoStage = 'Intake' | 'Wash Bay' | 'Blast Room' | 'Handling' | 'Prep' | 'Prime' | 'Paint' | 'QA' | 'Out';
+export const PHOTO_STAGES: PhotoStage[] = ['Intake', 'Wash Bay', 'Blast Room', 'Handling', 'Prep', 'Prime', 'Paint', 'QA', 'Out'];
+
+export interface Job {
+  id: number;
+  job_number: string;
+  quote_number: string;
+  po_number: string | null;
+  customer_id: number;
+  location_id: number | null;
+  stage_ids: number[];
+  status: JobStatus;
+  note: string | null;
+  date_in: string;
+  date_out: string | null;
+  created_by: string | null;
+}
+
+export interface JobItem {
+  id: number;
+  job_id: number;
+  description: string;
+  serial_number: string | null;
+  quantity: number;
+  note: string | null;
+  added_by: string | null;
+  added_at: string;
+}
+
+export interface JobPhoto {
+  id: number;
+  job_id: number;
+  item_id: number | null;
+  stage: PhotoStage;
+  taken_by: string | null;
+  taken_at: string;
+  url: string; // ready to show (signed link or data URL)
+}
+
+export interface JobEvent {
+  id: number;
+  kind: string;
+  detail: string;
+  by_name: string | null;
+  at: string;
+}
+
+/** A job as the yard board shows it. */
+export interface JobCard extends Job {
+  customer_name: string;
+  location_name: string | null;
+  items: Pick<JobItem, 'description' | 'serial_number' | 'quantity'>[];
+  cover_url: string | null;
+}
+
+export interface JobDetail extends JobCard {
+  created_by_name: string | null;
+  item_rows: JobItem[];
+  photos: JobPhoto[];
+  events: JobEvent[];
+}
+
+export interface NewItem {
+  description: string;
+  serial_number: string | null;
+  quantity: number;
+  note: string | null;
+  photos: Blob[];
+}
+
+export interface NewJob {
+  quote_number: string;
+  po_number: string | null;
+  customer_id: number;
+  location_id: number | null;
+  stage_ids: number[];
+  note: string | null;
+  photos: Blob[];
+  items: NewItem[];
+}
+
+export type JobPatch = Partial<Pick<Job,
+  'quote_number' | 'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note'>>;
+
 export interface Api {
   mode: 'live' | 'demo';
   restore(): Promise<Staff | null>;
@@ -100,4 +195,14 @@ export interface Api {
   createStaff(s: NewStaff): Promise<void>;
   updateStaff(s: Staff): Promise<void>;
   setPin(staffId: string, pin: string): Promise<void>;
+
+  // Jobs
+  jobs(opts: { includeCollected: boolean }): Promise<JobCard[]>;
+  job(id: number): Promise<JobDetail>;
+  /** Returns the new job's id and how many photos failed to upload (the job is saved either way). */
+  createJob(j: NewJob): Promise<{ id: number; photoErrors: number }>;
+  updateJob(id: number, patch: JobPatch): Promise<void>;
+  /** Both return how many photos failed to upload. */
+  addItem(jobId: number, item: NewItem): Promise<number>;
+  addPhotos(jobId: number, photos: Blob[], opts: { stage: PhotoStage; itemId?: number | null }): Promise<number>;
 }
