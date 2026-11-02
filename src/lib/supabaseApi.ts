@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { emailFor, normaliseMobile } from './auth';
 import type {
-  Api, Job, JobCard, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
+  Api, Job, JobCard, LabourEntry, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
 } from './types';
 
 const PHOTO_BUCKET = 'job-photos';
@@ -198,6 +198,22 @@ export function supabaseApi(url: string, anonKey: string): Api {
 
     async addPhotos(jobId, photos, { stage, itemId }) {
       return uploadPhotos(jobId, photos, stage, itemId ?? null);
+    },
+
+    async labour(jobId) {
+      const rows = check(await db.from('labour_entries').select('*, staff:staff_id(name)')
+        .eq('job_id', jobId).order('work_date', { ascending: false }).order('created_at', { ascending: false })) as
+        (LabourEntry & { staff: { name: string } | null })[];
+      return rows.map(({ staff, ...r }) => ({ ...r, hours: Number(r.hours), staff_name: staff?.name ?? '' }));
+    },
+
+    async logHours(e) {
+      const row = isOffice() ? e : { ...e, labour_rate_id: undefined };
+      check(await db.from('labour_entries').insert(row));
+    },
+
+    async deleteHours(id) {
+      check(await db.from('labour_entries').delete().eq('id', id));
     },
   };
 }

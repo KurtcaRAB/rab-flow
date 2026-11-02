@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { CustomerPicker, JobStatusChip, PhotoPicker, StagePicker, dateTime, shortDate } from '../jobUi';
 import { api } from '../lib/api';
 import {
-  PHOTO_STAGES, type Customer, type JobDetail as Detail, type JobStatus, type NewItem, type PhotoStage, type Stage,
+  PHOTO_STAGES, type Customer, type LabourEntry, type JobDetail as Detail, type JobStatus, type NewItem, type PhotoStage, type Stage,
   type Staff, type YardLocation,
 } from '../lib/types';
 import { ErrorText, Sheet, TopBar } from '../ui';
 import { ItemFields, blankItem, takeNotice } from './NewJob';
+import { HoursList, LogHours } from './LogHours';
 
-type Tab = 'Items' | 'Photos' | 'History';
+type Tab = 'Items' | 'Hours' | 'Photos' | 'History';
 
 export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; onBack: () => void }) {
   const isOffice = me.groups.includes('office');
@@ -16,12 +17,14 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
   const [stages, setStages] = useState<Stage[]>([]);
   const [locations, setLocations] = useState<YardLocation[]>([]);
   const [tab, setTab] = useState<Tab>('Items');
-  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | null>(null);
+  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | 'hours' | null>(null);
+  const [hours, setHours] = useState<LabourEntry[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
   const [notice, setNotice] = useState(takeNotice);
   const [error, setError] = useState('');
 
-  const reload = useCallback(() => api.job(id).then(setJob).catch((e) => setError((e as Error).message)), [id]);
+  const reload = useCallback(() => Promise.all([api.job(id).then(setJob), api.labour(id).then(setHours)])
+    .catch((e) => setError((e as Error).message)), [id]);
   useEffect(() => {
     reload();
     api.stages().then(setStages);
@@ -77,18 +80,20 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
         </section>
 
         <section className="grid grid-cols-2 gap-3">
-          <button className="btn-primary" onClick={() => setSheet('status')}>Move stage</button>
-          <select className="input font-semibold" aria-label="Yard location" value={job.location_id ?? ''}
+          {job.status !== 'Collected' && <button className="btn-primary" onClick={() => setSheet('hours')}>⏱ Log hours</button>}
+          <button className="btn-ghost" onClick={() => setSheet('status')}>Move stage</button>
+          <select className="input col-span-2 font-semibold" aria-label="Yard location" value={job.location_id ?? ''}
             onChange={(e) => update({ location_id: e.target.value ? Number(e.target.value) : null })}>
             <option value="">📍 No location</option>
             {locations.map((l) => <option key={l.id} value={l.id}>📍 {l.name}</option>)}
           </select>
         </section>
 
-        <nav className="flex gap-2">
-          {(['Items', 'Photos', 'History'] as Tab[]).map((t) => (
-            <button key={t} className={`${tab === t ? 'btn-primary' : 'btn-ghost'} min-h-10 flex-1 px-3 text-sm`} onClick={() => setTab(t)}>
-              {t}{t === 'Items' ? ` (${job.item_rows.length})` : t === 'Photos' ? ` (${job.photos.length})` : ''}
+        <nav className="grid grid-cols-4 gap-1.5">
+          {(['Items', 'Hours', 'Photos', 'History'] as Tab[]).map((t) => (
+            <button key={t} className={`${tab === t ? 'btn-primary' : 'btn-ghost'} min-h-10 gap-1 whitespace-nowrap px-1 text-sm`} onClick={() => setTab(t)}>
+              {t}<span className="opacity-70">{t === 'Items' ? job.item_rows.length : t === 'Photos' ? job.photos.length
+                : t === 'Hours' && hours.length ? Math.round(hours.reduce((a, e) => a + e.hours, 0) * 10) / 10 : ''}</span>
             </button>
           ))}
         </nav>
@@ -122,6 +127,13 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
               <button className="btn-ghost w-full" onClick={() => setSheet('item')}>+ Add item</button>
             )}
           </section>
+        )}
+
+        {tab === 'Hours' && (
+          <HoursList entries={hours} stages={stages} me={me} onDelete={async (eid) => {
+            if (!window.confirm('Remove this hours entry?')) return;
+            try { await api.deleteHours(eid); await reload(); } catch (e) { setError((e as Error).message); }
+          }} />
         )}
 
         {tab === 'Photos' && (
@@ -168,6 +180,10 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
           </div>
           <p className="mt-3 text-sm text-slate-500">Only the stages this job needs are listed. Edit the job to change them.</p>
         </Sheet>
+      )}
+      {sheet === 'hours' && (
+        <LogHours jobId={id} me={me} stages={stages} needed={job.stage_ids} onClose={() => setSheet(null)}
+          onSaved={async () => { setSheet(null); setTab('Hours'); await reload(); }} />
       )}
       {sheet === 'edit' && (
         <EditJob job={job} stages={stages} onClose={() => setSheet(null)}

@@ -183,6 +183,32 @@ export interface NewJob {
 export type JobPatch = Partial<Pick<Job,
   'quote_number' | 'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note'>>;
 
+// ---------------------------------------------------------------------------
+// Labour hours (phase 3)
+// ---------------------------------------------------------------------------
+
+export interface LabourEntry {
+  id: number;
+  job_id: number;
+  stage_id: number;
+  staff_id: string;
+  staff_name: string;
+  work_date: string; // YYYY-MM-DD
+  hours: number;
+  labour_rate_id: number | null;
+  note: string | null;
+}
+
+export interface NewLabour {
+  job_id: number;
+  stage_id: number;
+  staff_id: string;
+  work_date: string;
+  hours: number;
+  note: string | null;
+  labour_rate_id?: number | null; // Office only
+}
+
 export interface Api {
   mode: 'live' | 'demo';
   restore(): Promise<Staff | null>;
@@ -205,4 +231,9 @@ export interface Api {
   /** Both return how many photos failed to upload. */
   addItem(jobId: number, item: NewItem): Promise<number>;
   addPhotos(jobId: number, photos: Blob[], opts: { stage: PhotoStage; itemId?: number | null }): Promise<number>;
+
+  // Labour hours
+  labour(jobId: number): Promise<LabourEntry[]>;
+  logHours(e: NewLabour): Promise<void>;
+  deleteHours(id: number): Promise<void>;
 }

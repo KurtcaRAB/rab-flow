@@ -4,7 +4,7 @@ import seed from '../demo-seed.json';
 import { normaliseMobile } from './auth';
 import { blobToDataUrl, shrinkPhoto } from './photos';
 import type {
-  Api, Job, JobCard, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
+  Api, Job, JobCard, LabourEntry, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
 } from './types';
 
 type DemoPhoto = Omit<JobPhoto, 'url'> & { data: string };
@@ -24,6 +24,7 @@ interface Store {
   job_items: JobItem[];
   job_photos: DemoPhoto[];
   job_events: DemoEvent[];
+  labour: Omit<LabourEntry, 'staff_name'>[];
   nextJobNumber: number;
   nextId: number;
 }
@@ -55,7 +56,7 @@ function fresh(): Store {
       charge_per_hour: r.charge_per_hour, is_default: r.is_default, active: true,
     })),
     extras: seed.extras.map((e) => ({ id: id++, ...e, active: true })),
-    jobs: [], job_items: [], job_photos: [], job_events: [], nextJobNumber: 1,
+    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1,
     nextId: id,
   };
 }
@@ -65,7 +66,7 @@ function load(): Store {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       // Stores saved before jobs existed get empty job lists.
-      return { jobs: [], job_items: [], job_photos: [], job_events: [], nextJobNumber: 1, ...JSON.parse(raw) };
+      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], nextJobNumber: 1, ...JSON.parse(raw) };
     }
   } catch { /* storage blocked: fall back to fresh data */ }
   return fresh();
@@ -253,6 +254,39 @@ export function demoApi(): Api {
       await savePhotos(jobId, photos, stage, itemId ?? null);
       persistOrWarn();
       return later(0);
+    },
+
+    async labour(jobId) {
+      return later(store.labour.filter((l) => l.job_id === jobId)
+        .sort((a, b) => b.work_date.localeCompare(a.work_date) || b.id - a.id)
+        .map((l) => ({ ...l, staff_name: nameOf(l.staff_id) ?? '' })));
+    },
+
+    async logHours(e) {
+      const who = signedIn();
+      if (!(e.hours > 0 && e.hours <= 24)) throw new Error('Hours must be between 0 and 24.');
+      const staff_id = office() ? e.staff_id : who.id;
+      const rate = (office() && e.labour_rate_id) || store.labour_rates
+        .filter((r) => r.stage_id === e.stage_id && r.active).sort((a, b) => Number(b.is_default) - Number(a.is_default))[0]?.id || null;
+      store.labour.push({ ...e, id: store.nextId++, staff_id, labour_rate_id: rate });
+      // Logging hours moves the job to that stage.
+      const j = store.jobs.find((x) => x.id === e.job_id)!;
+      const stage = store.stages.find((s) => s.id === e.stage_id)!.name as Job['status'];
+      if (j.status !== stage && j.status !== 'Ready for pickup' && j.status !== 'Collected') {
+        event(j.id, 'status', `${j.status} → ${stage}`);
+        j.status = stage;
+      }
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async deleteHours(id) {
+      const who = signedIn();
+      const l = store.labour.find((x) => x.id === id);
+      if (l && l.staff_id !== who.id && !office()) throw new Error('You can only remove your own hours.');
+      store.labour = store.labour.filter((x) => x.id !== id);
+      persistOrWarn();
+      return later(undefined);
     },
   };
 }
