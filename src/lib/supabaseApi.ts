@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { emailFor, normaliseMobile } from './auth';
+import { NO_SIGNAL, isNetworkError, newId } from './net';
 import type {
-  Api, Job, JobCard, LabourEntry, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
+  Api, Job, JobCard, LabourEntry, PaintEntry, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
 } from './types';
 
 const PHOTO_BUCKET = 'job-photos';
@@ -17,23 +18,41 @@ export function supabaseApi(url: string, anonKey: string): Api {
   const db: SupabaseClient = createClient(url, anonKey);
   let me: Staff | null = null;
 
+  const ME_KEY = 'rabflow-me';
+
   async function loadMe(): Promise<Staff | null> {
-    const { data: auth } = await db.auth.getUser();
-    if (!auth.user) return null;
-    const { data, error } = await db.from('staff').select('*').eq('id', auth.user.id).single();
+    // The session is kept on the device, so this works without signal.
+    const { data: { session } } = await db.auth.getSession();
+    if (!session) return null;
+    const { data, error } = await db.from('staff').select('*').eq('id', session.user.id).maybeSingle();
+    if (error && isNetworkError(error.message)) {
+      // No signal: carry on as the person last signed in on this device.
+      try {
+        const cached = JSON.parse(localStorage.getItem(ME_KEY) ?? 'null') as Staff | null;
+        if (cached?.id === session.user.id) return (me = cached);
+      } catch { /* fall through */ }
+      return null;
+    }
     if (error || !data?.active) {
       await db.auth.signOut();
       return null;
     }
     me = data as Staff;
+    try { localStorage.setItem(ME_KEY, JSON.stringify(me)); } catch { /* ignore */ }
     return me;
   }
 
   const isOffice = () => !!me?.groups.includes('office');
 
   function check<T>(res: { data: T; error: { message: string } | null }): T {
-    if (res.error) throw new Error(res.error.message);
+    if (res.error) throw new Error(isNetworkError(res.error.message) ? NO_SIGNAL : res.error.message);
     return res.data;
+  }
+
+  /** Insert that treats "already saved" (same client_ref, e.g. a retry after lost signal) as done. */
+  async function insertOnce(table: string, row: object) {
+    const { error } = await db.from(table).insert(row);
+    if (error && error.code !== '23505') check({ data: null, error });
   }
 
   /** Signed links for private photos, valid for a few hours. */
@@ -64,7 +83,7 @@ export function supabaseApi(url: string, anonKey: string): Api {
   async function uploadPhotos(jobId: number, photos: Blob[], stage: PhotoStage, itemId: number | null) {
     let failed = 0;
     for (const p of photos) {
-      const path = `${jobId}/${crypto.randomUUID()}.jpg`;
+      const path = `${jobId}/${newId()}.jpg`;
       const up = await db.storage.from(PHOTO_BUCKET).upload(path, p, { contentType: p.type || 'image/jpeg' });
       if (up.error) { failed++; continue; }
       const { error } = await db.from('job_photos').insert({ job_id: jobId, item_id: itemId, path, stage });
@@ -91,6 +110,7 @@ export function supabaseApi(url: string, anonKey: string): Api {
 
     async signOut() {
       me = null;
+      try { localStorage.removeItem(ME_KEY); } catch { /* ignore */ }
       await db.auth.signOut();
     },
 
@@ -208,12 +228,26 @@ export function supabaseApi(url: string, anonKey: string): Api {
     },
 
     async logHours(e) {
-      const row = isOffice() ? e : { ...e, labour_rate_id: undefined };
-      check(await db.from('labour_entries').insert(row));
+      await insertOnce('labour_entries', isOffice() ? e : { ...e, labour_rate_id: undefined });
     },
 
     async deleteHours(id) {
       check(await db.from('labour_entries').delete().eq('id', id));
+    },
+
+    async paint(jobId) {
+      const rows = check(await db.from('material_usage').select('*, staff:staff_id(name)')
+        .eq('job_id', jobId).order('used_on', { ascending: false }).order('created_at', { ascending: false })) as
+        (PaintEntry & { staff: { name: string } | null })[];
+      return rows.map(({ staff, ...r }) => ({ ...r, litres: Number(r.litres), staff_name: staff?.name ?? '' }));
+    },
+
+    async logPaint(e) {
+      await insertOnce('material_usage', e);
+    },
+
+    async deletePaint(id) {
+      check(await db.from('material_usage').delete().eq('id', id));
     },
   };
 }

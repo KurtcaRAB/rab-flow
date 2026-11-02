@@ -5,6 +5,7 @@ Job tracking for the Rocklea Abrasive Blasting yard.
 - Phase 1 (foundations): mobile number + PIN sign-in, staff groups, and Settings for customers, yard locations, materials (with data sheets), labour rates, extras and staff. Costs and charge-out rates are visible to Office only, enforced in the database.
 - Phase 2 (job in): book a job in at the gate with photos, quote number, optional PO, customer, yard location, one or more items (serial number, qty, note, photo) and the stages it needs. Yard board with search (job, serial, quote, PO, customer) and filters. Job detail with Move stage, location, Add item, photos by stage and a history of every change.
 - Phase 3 (labour hours): Log hours on a job by stage (quick picks 0.5 to 8 h), totals per stage and per job. Logging hours moves the job to that stage. Workers log and remove their own hours; Office can log for anyone and pick a non-default rate. Rates stay Office only.
+- Phase 4 (paint and weak signal): Log paint on a job (Primer or Topcoat, product, litres with quick picks, with the SDS one tap away), totals per product. Hours and paint saved with no signal are kept on the phone and sent automatically when signal returns (never saved twice). The app itself is kept on the phone so it opens without signal.
 
 ## Run the preview (no setup)
 
@@ -39,4 +40,4 @@ Sign-in detail: Supabase Auth needs an email, so each mobile maps to a private a
 
 ## Coming next
 
-Phase 4 paint usage and offline saving, phase 5 QA, job out and reports. Xero after that.
+Phase 5 QA, job out and reports. Xero after that.

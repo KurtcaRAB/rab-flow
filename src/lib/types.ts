@@ -207,6 +207,32 @@ export interface NewLabour {
   hours: number;
   note: string | null;
   labour_rate_id?: number | null; // Office only
+  client_ref?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Primer and topcoat usage (phase 4)
+// ---------------------------------------------------------------------------
+
+export interface PaintEntry {
+  id: number;
+  job_id: number;
+  material_id: number;
+  staff_id: string;
+  staff_name: string;
+  used_on: string; // YYYY-MM-DD
+  litres: number;
+  note: string | null;
+}
+
+export interface NewPaint {
+  job_id: number;
+  material_id: number;
+  staff_id: string;
+  used_on: string;
+  litres: number;
+  note: string | null;
+  client_ref?: string;
 }
 
 export interface Api {
@@ -236,4 +262,9 @@ export interface Api {
   labour(jobId: number): Promise<LabourEntry[]>;
   logHours(e: NewLabour): Promise<void>;
   deleteHours(id: number): Promise<void>;
+
+  // Primer and topcoat usage
+  paint(jobId: number): Promise<PaintEntry[]>;
+  logPaint(e: NewPaint): Promise<void>;
+  deletePaint(id: number): Promise<void>;
 }
