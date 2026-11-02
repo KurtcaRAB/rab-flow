@@ -64,7 +64,7 @@ export function LogHours({ jobId, jobNumber, me, stages, needed, onClose, onSave
             ))}
           </div>
           {!showAll && (
-            <button type="button" className="mt-2 text-sm font-semibold text-brand" onClick={() => setShowAll(true)}>
+            <button type="button" className="link mt-2 text-sm" onClick={() => setShowAll(true)}>
               Show stages this job skips
             </button>
           )}

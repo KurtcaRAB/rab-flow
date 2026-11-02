@@ -4,7 +4,11 @@ export default {
   darkMode: 'media',
   theme: {
     extend: {
-      colors: { brand: { DEFAULT: '#E8590C', dark: '#C2410C' } },
+      // Rocklea Abrasive Blasting colours, taken from the company logo.
+      colors: {
+        brand: { DEFAULT: '#FFF200', dark: '#E6DA00' },
+        ink: { DEFAULT: '#231F20', soft: '#3A3536' },
+      },
     },
   },
   plugins: [],

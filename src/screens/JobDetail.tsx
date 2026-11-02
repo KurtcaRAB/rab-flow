@@ -79,7 +79,7 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
             <Info label="Quote">{job.quote_number}</Info>
             <Info label="Customer PO">
-              {job.po_number || <button className="font-semibold text-brand" onClick={() => setSheet('edit')}>+ Add PO</button>}
+              {job.po_number || <button className="link" onClick={() => setSheet('edit')}>+ Add PO</button>}
             </Info>
             <Info label="Booked in">{shortDate(job.date_in)}{job.created_by_name ? ` by ${job.created_by_name}` : ''}</Info>
             {job.date_out && <Info label="Collected">{shortDate(job.date_out)}</Info>}

@@ -54,7 +54,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
 
   return (
     <>
-      <TopBar title="Yard board" right={
+      <TopBar title="Yard board" logo right={
         <details className="relative">
           <summary className="btn-ghost min-h-10 cursor-pointer list-none px-4 text-sm">{me.name.split(' ')[0]} ▾</summary>
           <div className="card absolute right-0 z-20 mt-2 w-60 space-y-1 p-2 shadow-lg">
@@ -95,7 +95,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
             <input type="checkbox" className="h-5 w-5" checked={f.collected} onChange={(e) => set({ collected: e.target.checked })} />
             Include collected jobs
           </label>
-          {filtered && <button className="font-semibold text-brand" onClick={() => set({ ...NO_FILTERS, collected: f.collected })}>Clear filters</button>}
+          {filtered && <button className="link" onClick={() => set({ ...NO_FILTERS, collected: f.collected })}>Clear filters</button>}
         </div>
 
         {error && <p className="text-red-600">{error}</p>}
@@ -109,7 +109,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((j) => (
             <li key={j.id} className="min-w-0">
-              <button onClick={() => go({ to: 'job', id: j.id })} className="card flex w-full gap-3 overflow-hidden p-3 text-left hover:border-brand">
+              <button onClick={() => go({ to: 'job', id: j.id })} className="card flex w-full gap-3 overflow-hidden p-3 text-left hover:border-ink dark:hover:border-brand">
                 {j.cover_url
                   ? <img src={j.cover_url} alt="" loading="lazy" className="h-24 w-24 shrink-0 rounded-xl object-cover" />
                   : <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-3xl dark:bg-slate-800" aria-hidden>📦</div>}

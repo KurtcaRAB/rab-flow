@@ -1,6 +1,6 @@
 // RAB Flow offline support: keeps the app itself on the phone so it opens
 // with no signal. Data requests (Supabase) are never cached here.
-const CACHE = 'rabflow-app-v1';
+const CACHE = 'rabflow-app-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
