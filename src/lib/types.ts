@@ -181,7 +181,7 @@ export interface NewJob {
 }
 
 export type JobPatch = Partial<Pick<Job,
-  'quote_number' | 'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note'>>;
+  'quote_number' | 'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note' | 'date_out'>>;
 
 // ---------------------------------------------------------------------------
 // Labour hours (phase 3)
@@ -235,6 +235,51 @@ export interface NewPaint {
   client_ref?: string;
 }
 
+// ---------------------------------------------------------------------------
+// QA, job out, costs and reports (phase 5)
+// ---------------------------------------------------------------------------
+
+export interface QaCheck {
+  id: number;
+  job_id: number;
+  passed: boolean;
+  send_back_stage_id: number | null;
+  note: string | null;
+  by_name: string;
+  at: string;
+}
+
+export interface NewQa {
+  job_id: number;
+  passed: boolean;
+  send_back_stage_id: number | null;
+  note: string | null;
+}
+
+export interface JobExtra {
+  id: number;
+  job_id: number;
+  extra_id: number;
+  quantity: number;
+  note: string | null;
+  added_on: string;
+}
+
+/** One money line: a labour entry, a paint entry or an extra. Office only. */
+export interface CostLine {
+  job_id: number;
+  job_number: string;
+  customer: string;
+  kind: 'Labour' | 'Primer' | 'Topcoat' | 'Extra';
+  name: string;
+  worker: string | null;
+  on_date: string;
+  quantity: number;
+  unit: 'h' | 'L' | 'each';
+  cost: number;
+  charge: number;
+}
+
 export interface Api {
   mode: 'live' | 'demo';
   restore(): Promise<Staff | null>;
@@ -267,4 +312,14 @@ export interface Api {
   paint(jobId: number): Promise<PaintEntry[]>;
   logPaint(e: NewPaint): Promise<void>;
   deletePaint(id: number): Promise<void>;
+
+  // QA and job out
+  qaChecks(jobId: number): Promise<QaCheck[]>;
+  recordQa(q: NewQa): Promise<void>;
+
+  // Office only
+  jobExtras(jobId: number): Promise<JobExtra[]>;
+  addExtra(e: Omit<JobExtra, 'id' | 'added_on'>): Promise<void>;
+  deleteExtra(id: number): Promise<void>;
+  costLines(f: { jobId?: number; from?: string; to?: string }): Promise<CostLine[]>;
 }

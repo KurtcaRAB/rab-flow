@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { emailFor, normaliseMobile } from './auth';
 import { NO_SIGNAL, isNetworkError, newId } from './net';
 import type {
-  Api, Job, JobCard, LabourEntry, PaintEntry, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
+  Api, CostLine, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
 } from './types';
 
 const PHOTO_BUCKET = 'job-photos';
@@ -248,6 +248,35 @@ export function supabaseApi(url: string, anonKey: string): Api {
 
     async deletePaint(id) {
       check(await db.from('material_usage').delete().eq('id', id));
+    },
+
+    async qaChecks(jobId) {
+      const rows = check(await db.from('qa_checks').select('*, staff:by_staff(name)').eq('job_id', jobId)
+        .order('at', { ascending: false })) as (QaCheck & { staff: { name: string } | null })[];
+      return rows.map(({ staff, ...r }) => ({ ...r, by_name: staff?.name ?? '' }));
+    },
+
+    async recordQa(q) {
+      check(await db.from('qa_checks').insert(q));
+    },
+
+    async jobExtras(jobId) {
+      const rows = check(await db.from('job_extras').select('id, job_id, extra_id, quantity, note, added_on')
+        .eq('job_id', jobId).order('id')) as JobExtra[];
+      return rows.map((r) => ({ ...r, quantity: Number(r.quantity) }));
+    },
+
+    async addExtra(e) {
+      check(await db.from('job_extras').insert(e));
+    },
+
+    async deleteExtra(id) {
+      check(await db.from('job_extras').delete().eq('id', id));
+    },
+
+    async costLines({ jobId, from, to }) {
+      const rows = check(await db.rpc('cost_lines', { p_job_id: jobId ?? null, p_from: from ?? null, p_to: to ?? null })) as CostLine[];
+      return rows.map((r) => ({ ...r, quantity: Number(r.quantity), cost: Number(r.cost), charge: Number(r.charge) }));
     },
   };
 }

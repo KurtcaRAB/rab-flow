@@ -60,6 +60,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
           <div className="card absolute right-0 z-20 mt-2 w-60 space-y-1 p-2 shadow-lg">
             <p className="px-3 py-2 text-sm text-slate-500">{me.groups.map((g) => GROUP_LABELS[g]).join(' · ')}</p>
             <button className="w-full rounded-lg px-3 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => go({ to: 'datasheets' })}>Data sheets</button>
+            {isOffice && <button className="w-full rounded-lg px-3 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => go({ to: 'reports' })}>Reports</button>}
             {isOffice && <button className="w-full rounded-lg px-3 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => go({ to: 'settings' })}>Settings</button>}
             <button className="w-full rounded-lg px-3 py-3 text-left hover:bg-slate-100 dark:hover:bg-slate-800" onClick={onSignOut}>Sign out</button>
           </div>

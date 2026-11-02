@@ -8,12 +8,14 @@ import DataSheets from './screens/DataSheets';
 import Settings from './screens/Settings';
 import NewJob from './screens/NewJob';
 import JobDetail from './screens/JobDetail';
+import Reports from './screens/Reports';
 
 // Screens live in the address (#/job/12) so the phone's back button works.
 export type Route =
   | { to: 'home' }
   | { to: 'datasheets' }
   | { to: 'settings' }
+  | { to: 'reports' }
   | { to: 'new' }
   | { to: 'job'; id: number };
 export type Go = (r: Route, replace?: boolean) => void;
@@ -21,7 +23,7 @@ export type Go = (r: Route, replace?: boolean) => void;
 function parse(hash: string): Route {
   const [, a, b] = hash.replace(/^#/, '').split('/');
   if (a === 'job' && Number(b) > 0) return { to: 'job', id: Number(b) };
-  if (a === 'new' || a === 'datasheets' || a === 'settings') return { to: a };
+  if (a === 'new' || a === 'datasheets' || a === 'settings' || a === 'reports') return { to: a };
   return { to: 'home' };
 }
 const toHash = (r: Route) => (r.to === 'home' ? '#/' : r.to === 'job' ? `#/job/${r.id}` : `#/${r.to}`);
@@ -64,6 +66,7 @@ export default function App() {
       {route.to === 'new' && <NewJob onBack={back} onSaved={(id) => go({ to: 'job', id }, true)} />}
       {route.to === 'job' && <JobDetail key={route.id} id={route.id} me={me} onBack={back} />}
       {route.to === 'datasheets' && <DataSheets isOffice={isOffice} onBack={back} />}
+      {route.to === 'reports' && (isOffice ? <Reports onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
       {route.to === 'settings' && (isOffice ? <Settings me={me} onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
     </div>
   );
