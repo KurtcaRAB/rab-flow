@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 import { DEMO_PIN } from '../lib/demoApi';
 import type { Staff } from '../lib/types';
-import { ErrorText } from '../ui';
+import { ErrorText, Logo } from '../ui';
 
 export default function SignIn({ onSignedIn }: { onSignedIn: (s: Staff) => void }) {
   const [mobile, setMobile] = useState('');
@@ -27,9 +27,9 @@ export default function SignIn({ onSignedIn }: { onSignedIn: (s: Staff) => void 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4 py-10">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-2xl font-black text-white">RAB</div>
-        <h1 className="text-2xl font-bold">RAB Flow</h1>
-        <p className="text-slate-500 dark:text-slate-400">Rocklea Abrasive Blasting yard</p>
+        <Logo className="mx-auto mb-6 w-56 max-w-full" />
+        <h1 className="inline-block border-b-4 border-brand pb-1 text-2xl font-black uppercase tracking-widest">RAB Flow</h1>
+        <p className="mt-2 text-slate-600 dark:text-slate-400">Yard job tracking</p>
       </div>
       <form onSubmit={submit} className="space-y-4">
         <div>

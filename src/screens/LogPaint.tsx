@@ -133,7 +133,7 @@ export function PaintList({ entries, materials, me, onDelete }: {
                 <div className="font-semibold">{name(id)}</div>
                 <div className="text-sm text-slate-500">{m ? KIND_LABEL[m.type] : ''}</div>
               </div>
-              {m?.sds_url && <a className="text-sm font-semibold text-brand" href={m.sds_url} target="_blank" rel="noreferrer">SDS</a>}
+              {m?.sds_url && <a className="link text-sm" href={m.sds_url} target="_blank" rel="noreferrer">SDS</a>}
               <span className="text-xl font-bold">{fmtLitres(l)}</span>
             </li>
           );
