@@ -9,17 +9,19 @@ import { ErrorText, Sheet, TopBar } from '../ui';
 import { ItemFields, blankItem, takeNotice } from './NewJob';
 import { HoursList, LogHours } from './LogHours';
 import { LogPaint, PaintList } from './LogPaint';
+import { CostsTab, JobOutSheet, QaCheckSheet } from './QaAndOut';
 
-type Tab = 'Items' | 'Hours' | 'Paint' | 'Photos' | 'History';
+type Tab = 'Items' | 'Hours' | 'Paint' | 'Photos' | 'History' | 'Costs';
 const QUEUED = 'No signal: saved on this phone. It will send by itself when you are back in signal.';
 
 export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; onBack: () => void }) {
   const isOffice = me.groups.includes('office');
+  const canQa = isOffice || me.groups.includes('qa');
   const [job, setJob] = useState<Detail | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
   const [locations, setLocations] = useState<YardLocation[]>([]);
   const [tab, setTab] = useState<Tab>('Items');
-  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | 'hours' | 'paint' | null>(null);
+  const [sheet, setSheet] = useState<'status' | 'edit' | 'item' | 'photos' | 'hours' | 'paint' | 'qa' | 'out' | null>(null);
   const [hours, setHours] = useState<LabourEntry[]>([]);
   const [paint, setPaint] = useState<PaintEntry[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -46,8 +48,10 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
   }
 
   const neededStages = stages.filter((s) => job.stage_ids.includes(s.id));
-  const moveTo: JobStatus[] = ['Booked in', ...neededStages.map((s) => s.name as JobStatus), 'Ready for pickup',
-    ...(isOffice ? ['Collected' as JobStatus] : [])];
+  // Ready for pickup comes from a QA pass, Collected from Job out; Office can still set either directly.
+  const moveTo: JobStatus[] = ['Booked in', ...neededStages.map((s) => s.name as JobStatus),
+    ...(isOffice ? ['Ready for pickup', 'Collected'] as JobStatus[] : [])];
+  const photoNotice = (n: number) => n && setNotice(`${n} photo(s) did not upload. Add them again from Photos.`);
 
   return (
     <>
@@ -89,6 +93,12 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
             <button className="btn-primary" onClick={() => setSheet('hours')}>⏱ Log hours</button>
             <button className="btn-primary" onClick={() => setSheet('paint')}>🎨 Log paint</button>
           </>}
+          {canQa && job.status !== 'Collected' && job.status !== 'Ready for pickup' && (
+            <button className="btn col-span-2 bg-teal-600 text-white hover:bg-teal-700" onClick={() => setSheet('qa')}>🔍 QA check</button>
+          )}
+          {isOffice && job.status === 'Ready for pickup' && (
+            <button className="btn col-span-2 bg-green-600 text-white hover:bg-green-700" onClick={() => setSheet('out')}>🚚 Job out (collected)</button>
+          )}
           <button className="btn-ghost" onClick={() => setSheet('status')}>Move stage</button>
           <select className="input font-semibold" aria-label="Yard location" value={job.location_id ?? ''}
             onChange={(e) => update({ location_id: e.target.value ? Number(e.target.value) : null })}>
@@ -98,7 +108,7 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
         </section>
 
         <nav className="-mx-4 flex gap-1.5 overflow-x-auto px-4">
-          {(['Items', 'Hours', 'Paint', 'Photos', 'History'] as Tab[]).map((t) => (
+          {(['Items', 'Hours', 'Paint', 'Photos', 'History', ...(isOffice ? ['Costs'] : [])] as Tab[]).map((t) => (
             <button key={t} className={`${tab === t ? 'btn-primary' : 'btn-ghost'} min-h-10 shrink-0 grow gap-1 whitespace-nowrap px-3 text-sm`} onClick={() => setTab(t)}>
               {t}<span className="opacity-70">{t === 'Items' ? job.item_rows.length : t === 'Photos' ? job.photos.length
                 : t === 'Hours' && hours.length ? Math.round(hours.reduce((a, e) => a + e.hours, 0) * 10) / 10
@@ -171,6 +181,8 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
           </section>
         )}
 
+        {tab === 'Costs' && isOffice && <CostsTab jobId={id} />}
+
         {tab === 'History' && (
           <ol className="card divide-y divide-slate-200 dark:divide-slate-800">
             {job.events.map((e) => (
@@ -204,6 +216,14 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
       {sheet === 'paint' && (
         <LogPaint jobId={id} jobNumber={job.job_number} me={me} onClose={() => setSheet(null)}
           onSaved={async (r) => { setSheet(null); setTab('Paint'); if (r === 'queued') setNotice(QUEUED); else await reload(); }} />
+      )}
+      {sheet === 'qa' && (
+        <QaCheckSheet jobId={id} stages={stages} needed={job.stage_ids} onClose={() => setSheet(null)}
+          onSaved={async (n) => { setSheet(null); photoNotice(n); setTab('History'); await reload(); }} />
+      )}
+      {sheet === 'out' && (
+        <JobOutSheet jobId={id} onClose={() => setSheet(null)}
+          onSaved={async (n) => { setSheet(null); photoNotice(n); await reload(); }} />
       )}
       {sheet === 'edit' && (
         <EditJob job={job} stages={stages} onClose={() => setSheet(null)}

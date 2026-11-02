@@ -4,7 +4,7 @@ import seed from '../demo-seed.json';
 import { normaliseMobile } from './auth';
 import { blobToDataUrl, shrinkPhoto } from './photos';
 import type {
-  Api, Job, JobCard, LabourEntry, PaintEntry, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
+  Api, CostLine, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
 } from './types';
 
 type DemoPhoto = Omit<JobPhoto, 'url'> & { data: string };
@@ -26,6 +26,8 @@ interface Store {
   job_events: DemoEvent[];
   labour: Omit<LabourEntry, 'staff_name'>[];
   paint: Omit<PaintEntry, 'staff_name'>[];
+  qa: (Omit<QaCheck, 'by_name'> & { by: string })[];
+  job_extras: JobExtra[];
   nextJobNumber: number;
   nextId: number;
 }
@@ -57,7 +59,7 @@ function fresh(): Store {
       charge_per_hour: r.charge_per_hour, is_default: r.is_default, active: true,
     })),
     extras: seed.extras.map((e) => ({ id: id++, ...e, active: true })),
-    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], nextJobNumber: 1,
+    jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], qa: [], job_extras: [], nextJobNumber: 1,
     nextId: id,
   };
 }
@@ -67,7 +69,7 @@ function load(): Store {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       // Stores saved before jobs existed get empty job lists.
-      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], nextJobNumber: 1, ...JSON.parse(raw) };
+      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], qa: [], job_extras: [], nextJobNumber: 1, ...JSON.parse(raw) };
     }
   } catch { /* storage blocked: fall back to fresh data */ }
   return fresh();
@@ -225,10 +227,15 @@ export function demoApi(): Api {
     async updateJob(id, patch: JobPatch) {
       signedIn();
       const j = store.jobs.find((x) => x.id === id)!;
+      if (patch.status === 'Collected' && j.status !== 'Collected' && !office()) throw new Error('Only Office can mark a job collected.');
+      if (patch.status === 'Ready for pickup' && j.status !== 'Ready for pickup' && !office()) {
+        throw new Error('A job is ready for pickup once it passes QA.');
+      }
       const locName = (l: number | null) => store.yard_locations.find((x) => x.id === l)?.name ?? 'No location';
       if (patch.status && patch.status !== j.status) {
         event(id, 'status', `${j.status} → ${patch.status}`);
-        j.date_out = patch.status === 'Collected' ? now() : null;
+        j.date_out = patch.status === 'Collected' ? (patch.date_out ?? now()) : null;
+        delete patch.date_out;
       }
       if (patch.location_id !== undefined && patch.location_id !== j.location_id) {
         event(id, 'location', `${locName(j.location_id)} → ${locName(patch.location_id)}`);
@@ -304,6 +311,76 @@ export function demoApi(): Api {
       store.paint.push({ ...e, id: store.nextId++, staff_id: office() ? e.staff_id : who.id });
       persistOrWarn();
       return later(undefined);
+    },
+
+    async qaChecks(jobId) {
+      return later(store.qa.filter((q) => q.job_id === jobId).sort((a, b) => b.at.localeCompare(a.at))
+        .map(({ by, ...q }) => ({ ...q, by_name: nameOf(by) ?? '' })));
+    },
+
+    async recordQa(q) {
+      const who = signedIn();
+      if (!office() && !who.groups.includes('qa')) throw new Error('Only QA staff can pass or fail a job.');
+      const j = store.jobs.find((x) => x.id === q.job_id)!;
+      const target = (q.passed ? 'Ready for pickup' : store.stages.find((s) => s.id === q.send_back_stage_id)!.name) as Job['status'];
+      store.qa.push({ ...q, id: store.nextId++, by: who.id, at: now() });
+      if (j.status !== target) event(j.id, 'status', `${j.status} → ${target}`);
+      event(j.id, 'qa', (q.passed ? 'QA passed' : `QA failed, back to ${target}`) + (q.note ? `: ${q.note}` : ''));
+      j.status = target;
+      j.date_out = null;
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async jobExtras(jobId) {
+      if (!office()) throw new Error('Costs are for Office only.');
+      return later(store.job_extras.filter((x) => x.job_id === jobId));
+    },
+
+    async addExtra(e) {
+      if (!office()) throw new Error('Costs are for Office only.');
+      store.job_extras.push({ ...e, id: store.nextId++, added_on: new Date().toLocaleDateString('en-CA') });
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async deleteExtra(id) {
+      if (!office()) throw new Error('Costs are for Office only.');
+      store.job_extras = store.job_extras.filter((x) => x.id !== id);
+      persistOrWarn();
+      return later(undefined);
+    },
+
+    async costLines({ jobId, from, to }) {
+      if (!office()) throw new Error('Costs are for Office only.');
+      const inRange = (d: string) => (!from || d >= from) && (!to || d <= to);
+      const jobOf = (id: number) => store.jobs.find((j) => j.id === id)!;
+      const cust = (id: number) => store.customers.find((c) => c.id === jobOf(id).customer_id)?.name ?? '';
+      const r2 = (n: number) => Math.round(n * 100) / 100;
+      const lines: CostLine[] = [];
+      for (const l of store.labour) {
+        if ((jobId && l.job_id !== jobId) || !inRange(l.work_date)) continue;
+        const rate = store.labour_rates.find((r) => r.id === l.labour_rate_id);
+        const stage = store.stages.find((s) => s.id === l.stage_id)?.name ?? '';
+        lines.push({ job_id: l.job_id, job_number: jobOf(l.job_id).job_number, customer: cust(l.job_id), kind: 'Labour',
+          name: `${stage}${rate && rate.name !== stage ? ` (${rate.name})` : ''}`, worker: nameOf(l.staff_id), on_date: l.work_date, quantity: l.hours, unit: 'h',
+          cost: r2(l.hours * (rate?.cost_per_hour ?? 0)), charge: r2(l.hours * (rate?.charge_per_hour ?? 0)) });
+      }
+      for (const u of store.paint) {
+        if ((jobId && u.job_id !== jobId) || !inRange(u.used_on)) continue;
+        const m = store.materials.find((x) => x.id === u.material_id);
+        lines.push({ job_id: u.job_id, job_number: jobOf(u.job_id).job_number, customer: cust(u.job_id),
+          kind: m?.type === 'primer' ? 'Primer' : 'Topcoat', name: m?.name ?? '', worker: nameOf(u.staff_id), on_date: u.used_on,
+          quantity: u.litres, unit: 'L', cost: r2(u.litres * (m?.cost_per_l ?? 0)), charge: r2(u.litres * (m?.charge_per_l ?? 0)) });
+      }
+      for (const x of store.job_extras) {
+        if ((jobId && x.job_id !== jobId) || !inRange(x.added_on)) continue;
+        const e = store.extras.find((y) => y.id === x.extra_id);
+        lines.push({ job_id: x.job_id, job_number: jobOf(x.job_id).job_number, customer: cust(x.job_id), kind: 'Extra',
+          name: e?.name ?? '', worker: null, on_date: x.added_on, quantity: x.quantity, unit: 'each',
+          cost: r2(x.quantity * (e?.unit_cost ?? 0)), charge: r2(x.quantity * (e?.unit_charge ?? 0)) });
+      }
+      return later(lines.sort((a, b) => a.on_date.localeCompare(b.on_date) || a.job_id - b.job_id));
     },
 
     async deletePaint(id) {
