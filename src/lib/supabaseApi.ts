@@ -216,6 +216,11 @@ export function supabaseApi(url: string, anonKey: string): Api {
       return uploadPhotos(jobId, photos, 'Intake', saved.id);
     },
 
+    async deleteItem(id) {
+      const gone = check(await db.from('job_items').delete().eq('id', id).select('id')) as { id: number }[];
+      if (gone.length === 0) throw new Error('You can only remove items you added. Ask the office.');
+    },
+
     async addPhotos(jobId, photos, { stage, itemId }) {
       return uploadPhotos(jobId, photos, stage, itemId ?? null);
     },

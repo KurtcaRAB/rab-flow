@@ -40,7 +40,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
       (!f.status || j.status === f.status)
       && (!f.location || j.location_name === f.location)
       && (!f.customer || j.customer_name === f.customer)
-      && (!t || [j.job_number, j.quote_number, j.po_number, j.customer_name,
+      && (!t || [j.job_number, j.po_number, j.customer_name,
         ...j.items.flatMap((i) => [i.serial_number, i.description])]
         .some((v) => v?.toLowerCase().includes(t))));
   }, [jobs, f]);
@@ -67,7 +67,7 @@ export default function Home({ me, go, onSignOut }: { me: Staff; go: Go; onSignO
         </details>
       } />
       <main className="mx-auto max-w-5xl space-y-4 p-4 pb-28">
-        <input className="input" type="search" placeholder="Search job, serial, quote, PO or customer"
+        <input className="input" type="search" placeholder="Search job number, serial, PO or customer"
           value={f.q} onChange={(e) => set({ q: e.target.value })} />
 
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">

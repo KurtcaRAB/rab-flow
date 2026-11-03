@@ -98,6 +98,16 @@ export function demoApi(): Api {
     }
   }
 
+  /** YYMMDD (Brisbane time) + count for the day, as the database makes it. */
+  function nextJobNumber() {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Brisbane', year: '2-digit', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+    const day = `${p.year}${p.month}${p.day}`;
+    const n = store.jobs.filter((j) => j.job_number.startsWith(day) && j.job_number.length > 6).length + 1;
+    return day + String(n).padStart(3, '0');
+  }
+
   function addItemRow(jobId: number, { photos: _p, ...item }: NewItem): JobItem {
     const row: JobItem = { ...item, id: store.nextId++, job_id: jobId, added_by: me?.id ?? null, added_at: now() };
     store.job_items.push(row);
@@ -208,9 +218,8 @@ export function demoApi(): Api {
 
     async createJob({ photos, items, ...input }) {
       const who = signedIn();
-      if (!input.quote_number.trim()) throw new Error('Enter the quote number.');
       const job: Job = {
-        ...input, id: store.nextId++, job_number: `RAB-${String(store.nextJobNumber++).padStart(4, '0')}`,
+        ...input, id: store.nextId++, job_number: nextJobNumber(),
         status: 'Booked in', date_in: now(), date_out: null, created_by: who.id,
       };
       store.jobs.push(job);
@@ -255,6 +264,18 @@ export function demoApi(): Api {
       await savePhotos(jobId, item.photos, 'Intake', row.id);
       persistOrWarn();
       return later(0);
+    },
+
+    async deleteItem(id) {
+      const who = signedIn();
+      const it = store.job_items.find((x) => x.id === id);
+      if (!it) return later(undefined);
+      if (it.added_by !== who.id && !office()) throw new Error('You can only remove items you added. Ask the office.');
+      store.job_items = store.job_items.filter((x) => x.id !== id);
+      store.job_photos.forEach((p) => { if (p.item_id === id) p.item_id = null; });
+      event(it.job_id, 'item_removed', `Item removed: ${it.quantity > 1 ? `${it.quantity} × ` : ''}${it.description}${it.serial_number ? ` (S/N ${it.serial_number})` : ''}`);
+      persistOrWarn();
+      return later(undefined);
     },
 
     async addPhotos(jobId, photos, { stage, itemId }) {
