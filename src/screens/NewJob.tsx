@@ -29,8 +29,7 @@ export function ItemFields({ item, onChange, n }: {
         </div>
         <div>
           <label className="label" htmlFor={id('qty')}>Qty</label>
-          <input id={id('qty')} className="input" type="number" inputMode="numeric" min={1} required value={item.quantity}
-            onChange={(e) => set('quantity', Math.max(1, Number(e.target.value) || 1))} />
+          <QtyInput id={id('qty')} value={item.quantity} onChange={(q) => set('quantity', q)} />
         </div>
       </div>
       <div>
@@ -43,13 +42,32 @@ export function ItemFields({ item, onChange, n }: {
   );
 }
 
+/**
+ * Whole-number quantity that can be cleared and retyped on a phone.
+ * Keeps what is typed (even blank) while editing; blank or 0 goes back to 1 when you leave the box.
+ */
+export function QtyInput({ id, value, onChange }: { id: string; value: number; onChange: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText((t) => (Number(t) === value ? t : String(value))); }, [value]);
+  return (
+    <input id={id} className="input" type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" required
+      value={text}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+        setText(t);
+        if (Number(t) >= 1) onChange(Number(t));
+      }}
+      onBlur={() => { if (!(Number(text) >= 1)) { setText('1'); onChange(1); } }} />
+  );
+}
+
 export default function NewJob({ onBack, onSaved }: { onBack: () => void; onSaved: (id: number) => void }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [locations, setLocations] = useState<YardLocation[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
 
   const [photos, setPhotos] = useState<Blob[]>([]);
-  const [quote, setQuote] = useState('');
   const [po, setPo] = useState('');
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [locationId, setLocationId] = useState<number | null>(null);
@@ -69,11 +87,10 @@ export default function NewJob({ onBack, onSaved }: { onBack: () => void; onSave
     e.preventDefault();
     setError('');
     if (!customerId) return setError('Pick the customer.');
-    if (!quote.trim()) return setError('Enter the quote number.');
     setBusy(true);
     try {
       const { id, photoErrors } = await api.createJob({
-        quote_number: quote.trim(), po_number: po.trim() || null, customer_id: customerId, location_id: locationId,
+        po_number: po.trim() || null, customer_id: customerId, location_id: locationId,
         stage_ids: stages.filter((s) => stageIds.includes(s.id)).map((s) => s.id), note: note.trim() || null,
         photos, items: items.map(({ key: _k, ...i }) => ({ ...i, description: i.description.trim() })),
       });
@@ -94,15 +111,10 @@ export default function NewJob({ onBack, onSaved }: { onBack: () => void; onSave
           <PhotoPicker photos={photos} onChange={setPhotos} />
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label" htmlFor="quote">Quote number</label>
-            <input id="quote" className="input" required value={quote} onChange={(e) => setQuote(e.target.value)} />
-          </div>
-          <div>
-            <label className="label" htmlFor="po">Customer PO (optional)</label>
-            <input id="po" className="input" value={po} onChange={(e) => setPo(e.target.value)} />
-          </div>
+        <section className="space-y-1">
+          <label className="label" htmlFor="po">Customer PO (optional)</label>
+          <input id="po" className="input" value={po} onChange={(e) => setPo(e.target.value)} />
+          <p className="text-sm text-slate-500 dark:text-slate-400">The Job Number (e.g. 261104001) is given automatically when you book the job in.</p>
         </section>
 
         <section>

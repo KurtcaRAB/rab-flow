@@ -43,6 +43,13 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
     try { await api.updateJob(id, patch); await reload(); } catch (e) { setError((e as Error).message); }
   }
 
+  async function removeItem(it: Detail['item_rows'][number]) {
+    const hasPhotos = job?.photos.some((p) => p.item_id === it.id);
+    if (!window.confirm(`Remove "${it.description}" from this job?${hasPhotos ? '\n\nIts photos stay on the job under Photos.' : ''}`)) return;
+    setError('');
+    try { await api.deleteItem(it.id); await reload(); } catch (e) { setError((e as Error).message); }
+  }
+
   if (!job) {
     return (<><TopBar title="Job" onBack={onBack} /><main className="p-4 text-slate-500">{error || 'Loading…'}</main></>);
   }
@@ -77,7 +84,7 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
             <JobStatusChip status={job.status} big />
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
-            <Info label="Quote">{job.quote_number}</Info>
+            <Info label="Job Number">{job.job_number}</Info>
             <Info label="Customer PO">
               {job.po_number || <button className="link" onClick={() => setSheet('edit')}>+ Add PO</button>}
             </Info>
@@ -125,7 +132,14 @@ export default function JobDetail({ id, me, onBack }: { id: number; me: Staff; o
                 <div key={it.id} className="card space-y-2 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="font-semibold">{it.quantity > 1 ? `${it.quantity} × ` : ''}{it.description}</div>
-                    <span className="shrink-0 text-xs text-slate-500">{shortDate(it.added_at)}</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <span className="text-xs text-slate-500">{shortDate(it.added_at)}</span>
+                      {(isOffice || it.added_by === me.id) && job.status !== 'Collected' && (
+                        <button className="-my-2 -mr-2 h-10 w-10 rounded-full text-lg hover:bg-red-50 dark:hover:bg-red-950"
+                          aria-label={`Remove ${it.description}`} title="Remove item"
+                          onClick={() => removeItem(it)}>🗑</button>
+                      )}
+                    </div>
                   </div>
                   {it.serial_number && <div className="text-sm">S/N <b className="font-mono">{it.serial_number}</b></div>}
                   {it.note && <div className="text-sm text-slate-500 dark:text-slate-400">{it.note}</div>}
@@ -276,7 +290,6 @@ function EditJob({ job, stages, onClose, onSaved }: {
   job: Detail; stages: Stage[]; onClose: () => void; onSaved: (p: Parameters<typeof api.updateJob>[1]) => Promise<void>;
 }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [quote, setQuote] = useState(job.quote_number);
   const [po, setPo] = useState(job.po_number ?? '');
   const [customerId, setCustomerId] = useState<number | null>(job.customer_id);
   const [stageIds, setStageIds] = useState(job.stage_ids);
@@ -287,9 +300,8 @@ function EditJob({ job, stages, onClose, onSaved }: {
   function save(e: FormEvent) {
     e.preventDefault();
     if (!customerId) return setError('Pick the customer.');
-    if (!quote.trim()) return setError('Enter the quote number.');
     run(() => onSaved({
-      quote_number: quote.trim(), po_number: po.trim() || null, customer_id: customerId, note: note.trim() || null,
+      po_number: po.trim() || null, customer_id: customerId, note: note.trim() || null,
       stage_ids: stages.filter((s) => stageIds.includes(s.id)).map((s) => s.id),
     }));
   }
@@ -297,12 +309,8 @@ function EditJob({ job, stages, onClose, onSaved }: {
   return (
     <Sheet title={`Edit ${job.job_number}`} onClose={onClose}>
       <form onSubmit={save} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="label" htmlFor="eq">Quote number</label>
-            <input id="eq" className="input" required value={quote} onChange={(e) => setQuote(e.target.value)} /></div>
-          <div><label className="label" htmlFor="ep">Customer PO</label>
-            <input id="ep" className="input" value={po} onChange={(e) => setPo(e.target.value)} /></div>
-        </div>
+        <div><label className="label" htmlFor="ep">Customer PO</label>
+          <input id="ep" className="input" value={po} onChange={(e) => setPo(e.target.value)} /></div>
         <div><span className="label">Customer</span>
           <CustomerPicker customers={customers} value={customerId} onChange={setCustomerId} /></div>
         <div><span className="label">Stages needed</span>

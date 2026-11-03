@@ -104,8 +104,7 @@ export const PHOTO_STAGES: PhotoStage[] = ['Intake', 'Wash Bay', 'Blast Room', '
 
 export interface Job {
   id: number;
-  job_number: string;
-  quote_number: string;
+  job_number: string; // YYMMDD + daily count, e.g. 261104001. Made by the database.
   po_number: string | null;
   customer_id: number;
   location_id: number | null;
@@ -170,7 +169,6 @@ export interface NewItem {
 }
 
 export interface NewJob {
-  quote_number: string;
   po_number: string | null;
   customer_id: number;
   location_id: number | null;
@@ -181,7 +179,7 @@ export interface NewJob {
 }
 
 export type JobPatch = Partial<Pick<Job,
-  'quote_number' | 'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note' | 'date_out'>>;
+  'po_number' | 'customer_id' | 'location_id' | 'stage_ids' | 'status' | 'note' | 'date_out'>>;
 
 // ---------------------------------------------------------------------------
 // Labour hours (phase 3)
@@ -301,6 +299,7 @@ export interface Api {
   updateJob(id: number, patch: JobPatch): Promise<void>;
   /** Both return how many photos failed to upload. */
   addItem(jobId: number, item: NewItem): Promise<number>;
+  deleteItem(id: number): Promise<void>;
   addPhotos(jobId: number, photos: Blob[], opts: { stage: PhotoStage; itemId?: number | null }): Promise<number>;
 
   // Labour hours
