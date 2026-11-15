@@ -209,7 +209,7 @@ function useFilter<T extends { name: string; category: string | null }>(rows: T[
   }, [rows, q, cat, extra]);
   const bar = (
     <div className="space-y-3">
-      <input className="input" type="search" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="input" type="search" placeholder="Search name or code" value={q} onChange={(e) => setQ(e.target.value)} />
       {cats.length > 1 && (
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
           <button className={`${!cat ? 'btn-primary' : 'btn-ghost'} min-h-10 shrink-0 px-4 text-sm`} onClick={() => setCat('')}>All</button>
@@ -233,7 +233,7 @@ function TakeConsumables({ user, name, onBack, onDone }: { user: StoreUser; name
   const [review, setReview] = useState(false);
 
   useEffect(() => { api.store.consumables().then(setItems).catch((e) => setError((e as Error).message)); }, []);
-  const { shown, bar } = useFilter(items ?? []);
+  const { shown, bar } = useFilter(items ?? [], consumableExtra);
 
   const setQty = (id: number, qty: number) => setBasket((b) => {
     const next = new Map(b);
@@ -267,7 +267,7 @@ function TakeConsumables({ user, name, onBack, onDone }: { user: StoreUser; name
             <li key={i.id} className="flex min-h-16 items-center gap-3 px-4 py-2">
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">{i.name}</div>
-                <div className="text-sm text-slate-500">{[i.category, `per ${i.unit}`].filter(Boolean).join(' · ')}</div>
+                <div className="text-sm text-slate-500">{[i.code, i.category, `per ${i.unit}`].filter(Boolean).join(' · ')}</div>
               </div>
               <Qty value={basket.get(i.id!) ?? 0} onChange={(q) => setQty(i.id!, q)} />
             </li>
@@ -317,6 +317,7 @@ function Qty({ value, onChange }: { value: number; onChange: (n: number) => void
   );
 }
 
+const consumableExtra = (c: Consumable) => [c.code];
 const toolExtra = (t: StoreTool) => [t.tag, t.location, t.out_staff_name];
 
 function Tools({ user, name, onBack, onDone }: { user: StoreUser; name: string; onBack: () => void; onDone: (msg: string) => void }) {

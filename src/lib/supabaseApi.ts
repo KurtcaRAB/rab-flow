@@ -139,14 +139,14 @@ export function supabaseApi(url: string, anonKey: string): Api {
       async takes({ from, to }) {
         const { start, end } = brisbaneRange(from, to);
         const rows = check(await db.from('consumable_takes')
-          .select('id, quantity, note, taken_at, consumables(name, category, unit), staff:staff_id(name), jobs(job_number)')
+          .select('id, quantity, note, taken_at, consumables(name, code, category, unit), staff:staff_id(name), jobs(job_number)')
           .gte('taken_at', start).lt('taken_at', end).order('taken_at', { ascending: false })) as unknown as
           { id: number; quantity: number; note: string | null; taken_at: string;
-            consumables: { name: string; category: string | null; unit: string } | null;
+            consumables: { name: string; code: string | null; category: string | null; unit: string } | null;
             staff: { name: string } | null; jobs: { job_number: string } | null }[];
         return rows.map((r): ConsumableTake => ({
           id: r.id, quantity: Number(r.quantity), note: r.note, taken_at: r.taken_at,
-          consumable: r.consumables?.name ?? '', category: r.consumables?.category ?? null, unit: r.consumables?.unit ?? '',
+          consumable: r.consumables?.name ?? '', code: r.consumables?.code ?? null, category: r.consumables?.category ?? null, unit: r.consumables?.unit ?? '',
           staff_name: r.staff?.name ?? '', job_number: r.jobs?.job_number ?? null,
         }));
       },

@@ -40,13 +40,7 @@ interface Store {
 const KEY = 'rabflow-demo-v1';
 export const DEMO_STORE_PASSWORD = 'RABSTORE';
 
-// Example storeroom lists for the preview only. The live lists are filled in by Office.
-const DEMO_CONSUMABLES: [string, string, string][] = [
-  ['Flap disc 125mm 40 grit', 'Abrasives', 'each'], ['Cutting disc 125mm', 'Abrasives', 'each'],
-  ['Garnet 30/60', 'Blast media', 'bag'], ['Masking tape 48mm', 'Masking', 'roll'], ['Plastic sheet', 'Masking', 'roll'],
-  ['Nitrile gloves (L)', 'PPE', 'box'], ['Blast hood lens', 'PPE', 'each'], ['Ear plugs', 'PPE', 'pair'],
-  ['Thinners', 'Paint shop', 'litre'], ['Roller sleeve 230mm', 'Paint shop', 'each'], ['Rags', 'General', 'bag'],
-];
+// Consumables come from the order form; the tools are examples for the preview only.
 const DEMO_TOOLS: [string, string, string, string][] = [
   ['Angle grinder 125mm', 'GR-01', 'Power tools', 'Cage A'], ['Angle grinder 125mm', 'GR-02', 'Power tools', 'Cage A'],
   ['Needle scaler', 'NS-01', 'Power tools', 'Cage A'], ['DFT gauge', 'QA-01', 'Inspection', 'Office'],
@@ -55,7 +49,7 @@ const DEMO_TOOLS: [string, string, string, string][] = [
 
 function storeLists(nextId: () => number) {
   return {
-    consumables: DEMO_CONSUMABLES.map(([name, category, unit]) => ({ id: nextId(), name, category, unit, active: true })),
+    consumables: seed.consumables.map((c) => ({ id: nextId(), name: c.name, code: c.code ?? null, category: c.category, unit: 'each', active: true })),
     tools: DEMO_TOOLS.map(([name, tag, category, location]) => ({ id: nextId(), name, tag, category, location, notes: null, active: true })),
     store_codes: [], takes: [], signouts: [],
   };
@@ -279,7 +273,7 @@ export function demoApi(): Api {
           const { start, end } = brisbaneRange(from, to);
           return later(store.takes.filter((t) => t.taken_at >= start && t.taken_at < end).reverse().map((t): ConsumableTake => {
             const c = store.consumables.find((x) => x.id === t.consumable_id);
-            return { id: t.id, consumable: c?.name ?? '', category: c?.category ?? null, unit: c?.unit ?? '', quantity: t.quantity,
+            return { id: t.id, consumable: c?.name ?? '', code: c?.code ?? null, category: c?.category ?? null, unit: c?.unit ?? '', quantity: t.quantity,
               staff_name: nameOf(t.staff_id) ?? '', job_number: jobNo(t.job_id), note: t.note, taken_at: t.taken_at };
           }));
         },

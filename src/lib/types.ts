@@ -76,6 +76,7 @@ export interface Extra {
 export interface Consumable {
   id?: number;
   name: string;
+  code: string | null; // supplier item code
   category: string | null;
   unit: string; // each, box, pack, roll, litre, pair ...
   active: boolean;
@@ -324,6 +325,7 @@ export interface StoreUser { staffId: string; code: string }
 export interface ConsumableTake {
   id: number;
   consumable: string;
+  code: string | null;
   category: string | null;
   unit: string;
   quantity: number;

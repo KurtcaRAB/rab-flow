@@ -108,13 +108,14 @@ export default function Settings({ me, onBack }: { me: Staff; onBack: () => void
           <>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">What staff can log as taken in the Storeroom. Category groups them on the storeroom screen; unit is how it's counted (each, box, roll, litre…).</p>
             <ListEditor table="consumables" noun="consumable"
-              blank={() => ({ name: '', category: null, unit: 'each', active: true })}
+              blank={() => ({ name: '', code: null, category: null, unit: 'each', active: true })}
               title={(r) => r.name}
               sort={(a, b) => (a.category ?? '~').localeCompare(b.category ?? '~') || a.name.localeCompare(b.name)}
-              subtitle={(r) => [r.category, `per ${r.unit}`].filter(Boolean).join(' · ')}
+              subtitle={(r) => [r.code, r.category, `per ${r.unit}`].filter(Boolean).join(' · ')}
               fields={[
                 { key: 'name', label: 'Item name', kind: 'text', required: true },
-                { key: 'category', label: 'Category (e.g. Abrasives, PPE, Masking, Paint shop)', kind: 'text' },
+                { key: 'code', label: 'Item code (from the supplier order form)', kind: 'text' },
+                { key: 'category', label: 'Category (Abrasives, Paint supplies, Safety gear, Tools etc, Miscellaneous)', kind: 'text' },
                 { key: 'unit', label: 'Counted by (each, box, pack, roll, litre, pair, bag)', kind: 'text', required: true },
               ]} />
           </>

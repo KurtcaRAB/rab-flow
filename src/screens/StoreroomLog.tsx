@@ -137,8 +137,8 @@ function Takes({ from, to, onError }: { from: string; to: string; onError: (m: s
         </ul>
       )}
       <button className="btn-ghost" disabled={!rows.length} onClick={() => download(`Storeroom consumables ${from} to ${to}.csv`, [
-        ['Date and time', 'Item', 'Category', 'Quantity', 'Unit', 'Taken by', 'Job Number', 'Note'],
-        ...rows.map((r) => [when(r.taken_at), r.consumable, r.category, r.quantity, r.unit, r.staff_name, r.job_number, r.note]),
+        ['Date and time', 'Item', 'Item code', 'Category', 'Quantity', 'Unit', 'Taken by', 'Job Number', 'Note'],
+        ...rows.map((r) => [when(r.taken_at), r.consumable, r.code, r.category, r.quantity, r.unit, r.staff_name, r.job_number, r.note]),
       ])}>Download for Excel</button>
     </>
   );
