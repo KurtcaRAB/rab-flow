@@ -17,3 +17,16 @@ export const isValidPin = (pin: string) => /^[0-9]{6}$/.test(pin);
 export function formatMobile(m: string) {
   return m.length === 10 ? `${m.slice(0, 4)} ${m.slice(4, 7)} ${m.slice(7)}` : m;
 }
+
+// The shared storeroom sign-in: user STAFF, password RABSTORE (set in
+// supabase/migrations/008_storeroom.sql). It opens the Storeroom only.
+export const STORE_USER = 'STAFF';
+export const STORE_EMAIL = `store@${STAFF_EMAIL_DOMAIN}`;
+export const isValidStoreCode = (code: string) => /^[0-9]{4}$/.test(code);
+
+/** Brisbane-time bounds for a YYYY-MM-DD .. YYYY-MM-DD date range, for timestamp filters. */
+export function brisbaneRange(from: string, to: string) {
+  const end = new Date(`${to}T00:00:00+10:00`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start: new Date(`${from}T00:00:00+10:00`).toISOString(), end: end.toISOString() };
+}

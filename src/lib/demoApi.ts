@@ -1,10 +1,10 @@
 // Demo data layer for the click-through preview: same behaviour as the live
 // app, but stored in this browser only. Seeded from Kurt's lists.
 import seed from '../demo-seed.json';
-import { normaliseMobile } from './auth';
+import { STORE_USER, brisbaneRange, isValidStoreCode, normaliseMobile } from './auth';
 import { blobToDataUrl, shrinkPhoto } from './photos';
 import type {
-  Api, CostLine, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
+  Api, Consumable, ConsumableTake, CostLine, Session, StoreTool, Tool, ToolMove, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobEvent, JobItem, JobPatch, JobPhoto, NewItem, PhotoStage, Staff, Stage, TableName, Tables,
 } from './types';
 
 type DemoPhoto = Omit<JobPhoto, 'url'> & { data: string };
@@ -28,11 +28,32 @@ interface Store {
   paint: Omit<PaintEntry, 'staff_name'>[];
   qa: (Omit<QaCheck, 'by_name'> & { by: string })[];
   job_extras: JobExtra[];
+  consumables: Consumable[];
+  tools: Tool[];
+  store_codes: { staff_id: string; code: string; failed: number; locked_until: number }[];
+  takes: { id: number; consumable_id: number; staff_id: string; quantity: number; job_id: number | null; note: string | null; taken_at: string }[];
+  signouts: { id: number; tool_id: number; staff_id: string; job_id: number | null; out_at: string; returned_at: string | null; returned_by: string | null }[];
   nextJobNumber: number;
   nextId: number;
 }
 
 const KEY = 'rabflow-demo-v1';
+export const DEMO_STORE_PASSWORD = 'RABSTORE';
+
+// Consumables come from the order form; the tools are examples for the preview only.
+const DEMO_TOOLS: [string, string, string, string][] = [
+  ['Angle grinder 125mm', 'GR-01', 'Power tools', 'Cage A'], ['Angle grinder 125mm', 'GR-02', 'Power tools', 'Cage A'],
+  ['Needle scaler', 'NS-01', 'Power tools', 'Cage A'], ['DFT gauge', 'QA-01', 'Inspection', 'Office'],
+  ['Spray gun (airless)', 'SG-01', 'Spray gear', 'Paint shop'], ['Harness', 'HS-01', 'Safety / access', 'Cage B'],
+];
+
+function storeLists(nextId: () => number) {
+  return {
+    consumables: seed.consumables.map((c) => ({ id: nextId(), name: c.name, code: c.code ?? null, category: c.category, unit: 'each', active: true })),
+    tools: DEMO_TOOLS.map(([name, tag, category, location]) => ({ id: nextId(), name, tag, category, location, notes: null, active: true })),
+    store_codes: [], takes: [], signouts: [],
+  };
+}
 
 function fresh(): Store {
   let id = 1;
@@ -60,6 +81,7 @@ function fresh(): Store {
     })),
     extras: seed.extras.map((e) => ({ id: id++, ...e, active: true })),
     jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], qa: [], job_extras: [], nextJobNumber: 1,
+    ...storeLists(() => id++),
     nextId: id,
   };
 }
@@ -69,7 +91,10 @@ function load(): Store {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       // Stores saved before jobs existed get empty job lists.
-      return { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], qa: [], job_extras: [], nextJobNumber: 1, ...JSON.parse(raw) };
+      const saved = { jobs: [], job_items: [], job_photos: [], job_events: [], labour: [], paint: [], qa: [], job_extras: [], nextJobNumber: 1, ...JSON.parse(raw) } as Store;
+      // Stores saved before the storeroom existed get the example lists.
+      if (!saved.consumables) Object.assign(saved, storeLists(() => saved.nextId++));
+      return saved;
     }
   } catch { /* storage blocked: fall back to fresh data */ }
   return fresh();
@@ -137,9 +162,10 @@ export function demoApi(): Api {
 
   return {
     mode: 'demo',
-    async restore() {
+    async restore(): Promise<Session | null> {
       try {
         const id = sessionStorage.getItem(KEY + '-me');
+        if (id === 'store') { me = null; return 'store'; }
         const s = store.staff.find((x) => x.id === id && x.active);
         me = s ? strip(s) : null;
       } catch { me = null; }
@@ -160,6 +186,114 @@ export function demoApi(): Api {
       try { sessionStorage.removeItem(KEY + '-me'); } catch { /* ignore */ }
     },
     async stages() { return later(store.stages); },
+
+    store: (() => {
+      const inStore = () => {
+        let id: string | null = null;
+        try { id = sessionStorage.getItem(KEY + '-me'); } catch { /* ignore */ }
+        if (id !== 'store' && !me) throw new Error('Please sign in to the storeroom again.');
+      };
+      const problem = (staffId: string, code: string) => {
+        inStore();
+        const c = store.store_codes.find((x) => x.staff_id === staffId);
+        if (!c) return 'Choose your 4-digit code first.';
+        if (c.locked_until > Date.now()) return `Too many wrong codes. Try again in ${Math.ceil((c.locked_until - Date.now()) / 60000)} min, or ask the office to reset your code.`;
+        if (c.code !== code) {
+          c.failed++;
+          if (c.failed >= 5) c.locked_until = Date.now() + 15 * 60000;
+          persist();
+          return 'Wrong code.';
+        }
+        c.failed = 0; c.locked_until = 0;
+        return null;
+      };
+      const ok = (staffId: string, code: string) => { const p = problem(staffId, code); if (p) throw new Error(p); };
+      const jobId = (n: string | null) => {
+        if (!n?.trim()) return null;
+        const j = store.jobs.find((x) => x.job_number === n.trim());
+        if (!j) throw new Error(`No job with Job Number ${n.trim()}. Check the number or leave it blank.`);
+        return j.id;
+      };
+      const jobNo = (id: number | null) => store.jobs.find((j) => j.id === id)?.job_number ?? null;
+      return {
+        async signIn(user: string, password: string) {
+          if (user.trim().toUpperCase() !== STORE_USER || password !== DEMO_STORE_PASSWORD) throw new Error('User or password is wrong.');
+          me = null;
+          try { sessionStorage.setItem(KEY + '-me', 'store'); } catch { /* ignore */ }
+          return later(undefined);
+        },
+        async people() {
+          inStore();
+          return later(store.staff.filter((s) => s.active).sort((a, b) => a.name.localeCompare(b.name))
+            .map((s) => ({ id: s.id, name: s.name, has_code: store.store_codes.some((c) => c.staff_id === s.id) })));
+        },
+        async setCode(staffId: string, code: string) {
+          inStore();
+          if (!isValidStoreCode(code)) throw new Error('Your code must be 4 digits.');
+          if (store.store_codes.some((c) => c.staff_id === staffId)) throw new Error('You already have a code. Ask the office to reset it if you have forgotten it.');
+          store.store_codes.push({ staff_id: staffId, code, failed: 0, locked_until: 0 });
+          persist();
+          return later(undefined);
+        },
+        async checkCode({ staffId, code }: { staffId: string; code: string }) { ok(staffId, code); return later(undefined); },
+        async consumables() { inStore(); return later(store.consumables.filter((c) => c.active)); },
+        async tools() {
+          inStore();
+          return later(store.tools.filter((t) => t.active).map((t): StoreTool => {
+            const o = store.signouts.find((x) => x.tool_id === t.id && !x.returned_at);
+            return { ...t, id: t.id!, out_staff_id: o?.staff_id ?? null, out_staff_name: o ? nameOf(o.staff_id) : null, out_at: o?.out_at ?? null, out_job_number: o ? jobNo(o.job_id) : null };
+          }));
+        },
+        async take({ staffId, code }: { staffId: string; code: string }, lines: { consumable_id: number; quantity: number }[], jobNumber: string | null, note: string | null) {
+          ok(staffId, code);
+          const job_id = jobId(jobNumber);
+          if (!lines.length) throw new Error('Add at least one item.');
+          for (const l of lines) store.takes.push({ id: store.nextId++, ...l, staff_id: staffId, job_id, note, taken_at: now() });
+          persist();
+          return later(undefined);
+        },
+        async toolOut({ staffId, code }: { staffId: string; code: string }, toolId: number, jobNumber: string | null) {
+          ok(staffId, code);
+          const o = store.signouts.find((x) => x.tool_id === toolId && !x.returned_at);
+          if (o) throw new Error(`That tool is already signed out to ${nameOf(o.staff_id)}. Return it first.`);
+          store.signouts.push({ id: store.nextId++, tool_id: toolId, staff_id: staffId, job_id: jobId(jobNumber), out_at: now(), returned_at: null, returned_by: null });
+          persist();
+          return later(undefined);
+        },
+        async toolIn({ staffId, code }: { staffId: string; code: string }, toolId: number) {
+          ok(staffId, code);
+          const o = store.signouts.find((x) => x.tool_id === toolId && !x.returned_at);
+          if (!o) throw new Error('That tool is not signed out.');
+          o.returned_at = now(); o.returned_by = staffId;
+          persist();
+          return later(undefined);
+        },
+        async takes({ from, to }: { from: string; to: string }) {
+          if (!office()) throw new Error('Storeroom logs are for Office only.');
+          const { start, end } = brisbaneRange(from, to);
+          return later(store.takes.filter((t) => t.taken_at >= start && t.taken_at < end).reverse().map((t): ConsumableTake => {
+            const c = store.consumables.find((x) => x.id === t.consumable_id);
+            return { id: t.id, consumable: c?.name ?? '', code: c?.code ?? null, category: c?.category ?? null, unit: c?.unit ?? '', quantity: t.quantity,
+              staff_name: nameOf(t.staff_id) ?? '', job_number: jobNo(t.job_id), note: t.note, taken_at: t.taken_at };
+          }));
+        },
+        async toolMoves({ from, to }: { from: string; to: string }) {
+          if (!office()) throw new Error('Storeroom logs are for Office only.');
+          const { start, end } = brisbaneRange(from, to);
+          return later(store.signouts.filter((o) => !o.returned_at || (o.out_at >= start && o.out_at < end)).reverse().map((o): ToolMove => {
+            const t = store.tools.find((x) => x.id === o.tool_id);
+            return { id: o.id, tool: t?.name ?? '', tag: t?.tag ?? null, staff_name: nameOf(o.staff_id) ?? '', job_number: jobNo(o.job_id),
+              out_at: o.out_at, returned_at: o.returned_at, returned_by_name: nameOf(o.returned_by) };
+          }));
+        },
+        async resetCode(staffId: string) {
+          if (!office()) throw new Error('Only Office can reset storeroom codes.');
+          store.store_codes = store.store_codes.filter((c) => c.staff_id !== staffId);
+          persist();
+          return later(undefined);
+        },
+      };
+    })(),
     async list<K extends TableName>(table: K) {
       const rows = store[table] as Tables[K][];
       if (table === 'materials' && !office()) {

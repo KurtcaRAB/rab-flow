@@ -7,7 +7,7 @@ type GroupBy = 'Job' | 'Customer' | 'Stage' | 'Product' | 'Worker';
 const GROUPS: GroupBy[] = ['Job', 'Customer', 'Stage', 'Product', 'Worker'];
 
 const iso = (d: Date) => d.toLocaleDateString('en-CA');
-function preset(p: 'week' | 'month' | 'last' | 'year'): [string, string] {
+export function preset(p: 'week' | 'month' | 'last' | 'year'): [string, string] {
   const now = new Date();
   if (p === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
@@ -50,7 +50,7 @@ function summarise(lines: CostLine[], g: GroupBy): Row[] {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Comma-separated file that opens straight in Excel. */
-function download(name: string, rows: (string | number | null)[][]) {
+export function download(name: string, rows: (string | number | null)[][]) {
   const cell = (v: string | number | null) => {
     const s = v === null ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

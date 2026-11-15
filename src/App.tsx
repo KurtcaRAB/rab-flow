@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './lib/api';
 import { clearFailures, flush, lastFailures, pending, subscribe } from './lib/outbox';
-import type { Staff } from './lib/types';
+import type { Session } from './lib/types';
 import SignIn from './screens/SignIn';
 import Home from './screens/Home';
 import DataSheets from './screens/DataSheets';
@@ -9,6 +9,8 @@ import Settings from './screens/Settings';
 import NewJob from './screens/NewJob';
 import JobDetail from './screens/JobDetail';
 import Reports from './screens/Reports';
+import Storeroom from './screens/Storeroom';
+import StoreroomLog from './screens/StoreroomLog';
 
 // Screens live in the address (#/job/12) so the phone's back button works.
 export type Route =
@@ -16,6 +18,7 @@ export type Route =
   | { to: 'datasheets' }
   | { to: 'settings' }
   | { to: 'reports' }
+  | { to: 'storeroom' }
   | { to: 'new' }
   | { to: 'job'; id: number };
 export type Go = (r: Route, replace?: boolean) => void;
@@ -23,13 +26,13 @@ export type Go = (r: Route, replace?: boolean) => void;
 function parse(hash: string): Route {
   const [, a, b] = hash.replace(/^#/, '').split('/');
   if (a === 'job' && Number(b) > 0) return { to: 'job', id: Number(b) };
-  if (a === 'new' || a === 'datasheets' || a === 'settings' || a === 'reports') return { to: a };
+  if (a === 'new' || a === 'datasheets' || a === 'settings' || a === 'reports' || a === 'storeroom') return { to: a };
   return { to: 'home' };
 }
 const toHash = (r: Route) => (r.to === 'home' ? '#/' : r.to === 'job' ? `#/job/${r.id}` : `#/${r.to}`);
 
 export default function App() {
-  const [me, setMe] = useState<Staff | null | undefined>(undefined);
+  const [me, setMe] = useState<Session | null | undefined>(undefined);
   const [route, setRoute] = useState<Route>(() => parse(location.hash));
 
   useEffect(() => {
@@ -49,9 +52,18 @@ export default function App() {
   const back = () => (history.state?.app ? history.back() : go({ to: 'home' }, true));
 
   if (me === undefined) return <div className="flex min-h-screen items-center justify-center text-slate-500">Loading…</div>;
-  if (!me) return <SignIn onSignedIn={(s) => { setMe(s); go({ to: 'home' }, true); }} />;
+  if (!me) return <SignIn onSignedIn={(s) => { setMe(s); go({ to: 'home' }, true); }} onStore={() => { setMe('store'); go({ to: 'home' }, true); }} />;
 
   const signOut = async () => { await api.signOut(); setMe(null); };
+  // The shared storeroom login sees the Storeroom and nothing else.
+  if (me === 'store') {
+    return (
+      <div className="min-h-screen">
+        {api.mode === 'demo' && <div className="bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-900">Preview with demo data.</div>}
+        <Storeroom onExit={signOut} />
+      </div>
+    );
+  }
   const isOffice = me.groups.includes('office');
 
   return (
@@ -67,6 +79,7 @@ export default function App() {
       {route.to === 'job' && <JobDetail key={route.id} id={route.id} me={me} onBack={back} />}
       {route.to === 'datasheets' && <DataSheets isOffice={isOffice} onBack={back} />}
       {route.to === 'reports' && (isOffice ? <Reports onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
+      {route.to === 'storeroom' && (isOffice ? <StoreroomLog onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
       {route.to === 'settings' && (isOffice ? <Settings me={me} onBack={back} /> : <Home me={me} go={go} onSignOut={signOut} />)}
     </div>
   );

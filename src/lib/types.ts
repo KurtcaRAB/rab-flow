@@ -72,12 +72,35 @@ export interface Extra {
   active: boolean;
 }
 
+/** Storeroom consumables (gloves, discs, tape ...). */
+export interface Consumable {
+  id?: number;
+  name: string;
+  code: string | null; // supplier item code
+  category: string | null;
+  unit: string; // each, box, pack, roll, litre, pair ...
+  active: boolean;
+}
+
+/** Storeroom tools that are signed out and back in. */
+export interface Tool {
+  id?: number;
+  name: string;
+  tag: string | null; // tool ID / asset tag
+  category: string | null;
+  location: string | null; // shelf or cage
+  notes: string | null;
+  active: boolean;
+}
+
 export interface Tables {
   customers: Customer;
   yard_locations: YardLocation;
   materials: Material;
   labour_rates: LabourRate;
   extras: Extra;
+  consumables: Consumable;
+  tools: Tool;
 }
 export type TableName = keyof Tables;
 
@@ -278,9 +301,73 @@ export interface CostLine {
   charge: number;
 }
 
+// ---------------------------------------------------------------------------
+// Storeroom
+// ---------------------------------------------------------------------------
+
+/** Signed in with the shared storeroom login (STAFF / RABSTORE). */
+export const STORE_SESSION = 'store' as const;
+export type Session = Staff | typeof STORE_SESSION;
+
+export interface StorePerson { id: string; name: string; has_code: boolean }
+
+export interface StoreTool extends Tool {
+  id: number;
+  out_staff_id: string | null;
+  out_staff_name: string | null;
+  out_at: string | null;
+  out_job_number: string | null;
+}
+
+/** The person using the storeroom, checked with their 4-digit code. */
+export interface StoreUser { staffId: string; code: string }
+
+export interface ConsumableTake {
+  id: number;
+  consumable: string;
+  code: string | null;
+  category: string | null;
+  unit: string;
+  quantity: number;
+  staff_name: string;
+  job_number: string | null;
+  note: string | null;
+  taken_at: string;
+}
+
+export interface ToolMove {
+  id: number;
+  tool: string;
+  tag: string | null;
+  staff_name: string;
+  job_number: string | null;
+  out_at: string;
+  returned_at: string | null;
+  returned_by_name: string | null;
+}
+
+export interface StoreApi {
+  /** Shared storeroom sign-in. */
+  signIn(user: string, password: string): Promise<void>;
+  people(): Promise<StorePerson[]>;
+  setCode(staffId: string, code: string): Promise<void>;
+  /** Throws with a message to show if the code is wrong or locked. */
+  checkCode(u: StoreUser): Promise<void>;
+  consumables(): Promise<Consumable[]>;
+  tools(): Promise<StoreTool[]>;
+  take(u: StoreUser, lines: { consumable_id: number; quantity: number }[], jobNumber: string | null, note: string | null): Promise<void>;
+  toolOut(u: StoreUser, toolId: number, jobNumber: string | null): Promise<void>;
+  toolIn(u: StoreUser, toolId: number): Promise<void>;
+  // Office only
+  takes(f: { from: string; to: string }): Promise<ConsumableTake[]>;
+  toolMoves(f: { from: string; to: string }): Promise<ToolMove[]>;
+  resetCode(staffId: string): Promise<void>;
+}
+
 export interface Api {
   mode: 'live' | 'demo';
-  restore(): Promise<Staff | null>;
+  restore(): Promise<Session | null>;
+  store: StoreApi;
   signIn(mobile: string, pin: string): Promise<Staff>;
   signOut(): Promise<void>;
   stages(): Promise<Stage[]>;

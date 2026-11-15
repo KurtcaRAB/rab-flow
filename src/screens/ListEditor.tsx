@@ -124,7 +124,7 @@ function FieldInput({ f, value, onChange }: { f: FieldDef; value: unknown; onCha
         <select id={id} className="input" value={text} required={f.required}
           onChange={(e) => {
             const opt = f.options!.find((o) => String(o.value) === e.target.value);
-            onChange(opt ? opt.value : null);
+            onChange(opt && opt.value !== '' ? opt.value : null);
           }}>
           {f.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
