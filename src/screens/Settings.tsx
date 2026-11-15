@@ -5,7 +5,9 @@ import { StatusChip, TopBar, money } from '../ui';
 import ListEditor from './ListEditor';
 import StaffEditor from './StaffEditor';
 
-const TABS = ['Customers', 'Yard locations', 'Materials', 'Labour rates', 'Extras', 'Staff'] as const;
+export const TOOL_CATEGORIES = ['Power tools', 'Blast gear', 'Spray gear', 'Hand tools', 'Inspection', 'Safety / access', 'Other'];
+
+const TABS = ['Customers', 'Yard locations', 'Materials', 'Labour rates', 'Extras', 'Consumables', 'Tools', 'Staff'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Settings({ me, onBack }: { me: Staff; onBack: () => void }) {
@@ -99,6 +101,40 @@ export default function Settings({ me, onBack }: { me: Staff; onBack: () => void
                 { key: 'name', label: 'Name', kind: 'text', required: true },
                 { key: 'unit_cost', label: 'Cost each', kind: 'money' },
                 { key: 'unit_charge', label: 'Charge-out each', kind: 'money' },
+              ]} />
+          </>
+        )}
+        {tab === 'Consumables' && (
+          <>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">What staff can log as taken in the Storeroom. Category groups them on the storeroom screen; unit is how it's counted (each, box, roll, litre…).</p>
+            <ListEditor table="consumables" noun="consumable"
+              blank={() => ({ name: '', category: null, unit: 'each', active: true })}
+              title={(r) => r.name}
+              sort={(a, b) => (a.category ?? '~').localeCompare(b.category ?? '~') || a.name.localeCompare(b.name)}
+              subtitle={(r) => [r.category, `per ${r.unit}`].filter(Boolean).join(' · ')}
+              fields={[
+                { key: 'name', label: 'Item name', kind: 'text', required: true },
+                { key: 'category', label: 'Category (e.g. Abrasives, PPE, Masking, Paint shop)', kind: 'text' },
+                { key: 'unit', label: 'Counted by (each, box, pack, roll, litre, pair, bag)', kind: 'text', required: true },
+              ]} />
+          </>
+        )}
+        {tab === 'Tools' && (
+          <>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">Tools staff sign out and back in at the Storeroom. Give each tool its own Tool ID (write it on the tool) so two of the same grinder can be told apart.</p>
+            <ListEditor table="tools" noun="tool"
+              blank={() => ({ name: '', tag: null, category: null, location: null, notes: null, active: true })}
+              title={(r) => `${r.name}${r.tag ? ` (${r.tag})` : ''}`}
+              sort={(a, b) => (a.category ?? '~').localeCompare(b.category ?? '~') || a.name.localeCompare(b.name) || (a.tag ?? '').localeCompare(b.tag ?? '')}
+              subtitle={(r) => [r.category, r.location].filter(Boolean).join(' · ')}
+              fields={[
+                { key: 'name', label: 'Tool name', kind: 'text', required: true },
+                { key: 'tag', label: 'Tool ID / tag (e.g. GR-03)', kind: 'text' },
+                { key: 'category', label: 'Category', kind: 'select', options: [
+                  { value: '', label: '—' }, ...TOOL_CATEGORIES.map((c) => ({ value: c, label: c })),
+                ] },
+                { key: 'location', label: 'Kept where (shelf, cage)', kind: 'text' },
+                { key: 'notes', label: 'Notes (serial number, test and tag date…)', kind: 'textarea' },
               ]} />
           </>
         )}

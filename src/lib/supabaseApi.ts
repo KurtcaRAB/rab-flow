@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { emailFor, normaliseMobile } from './auth';
+import { STORE_EMAIL, STORE_USER, brisbaneRange, emailFor, normaliseMobile } from './auth';
 import { NO_SIGNAL, isNetworkError, newId } from './net';
 import type {
-  Api, CostLine, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
+  Api, ConsumableTake, CostLine, Session, StorePerson, StoreTool, ToolMove, Job, JobCard, JobExtra, LabourEntry, PaintEntry, QaCheck, JobDetail, JobEvent, JobItem, JobPhoto, Material, PhotoStage, Stage, Staff, TableName, Tables,
 } from './types';
 
 const PHOTO_BUCKET = 'job-photos';
@@ -20,10 +20,11 @@ export function supabaseApi(url: string, anonKey: string): Api {
 
   const ME_KEY = 'rabflow-me';
 
-  async function loadMe(): Promise<Staff | null> {
+  async function loadMe(): Promise<Session | null> {
     // The session is kept on the device, so this works without signal.
     const { data: { session } } = await db.auth.getSession();
     if (!session) return null;
+    if (session.user.email === STORE_EMAIL) { me = null; return 'store'; }
     const { data, error } = await db.from('staff').select('*').eq('id', session.user.id).maybeSingle();
     if (error && isNetworkError(error.message)) {
       // No signal: carry on as the person last signed in on this device.
@@ -92,11 +93,80 @@ export function supabaseApi(url: string, anonKey: string): Api {
     return failed;
   }
 
+  /** Store functions return null when it worked, or a message to show. */
+  async function storeCall(fn: string, args: object) {
+    const msg = check(await db.rpc(fn, args)) as string | null;
+    if (msg) throw new Error(msg);
+  }
+
   const JOB_SELECT = '*, customers(name), yard_locations(name), job_items(*), job_photos(id, item_id, path, stage, taken_by, taken_at)';
 
   return {
     mode: 'live',
     restore: loadMe,
+
+    store: {
+      async signIn(user, password) {
+        if (user.trim().toUpperCase() !== STORE_USER) throw new Error('User or password is wrong.');
+        const { error } = await db.auth.signInWithPassword({ email: STORE_EMAIL, password });
+        if (error) throw new Error(isNetworkError(error.message) ? NO_SIGNAL : 'User or password is wrong.');
+        me = null;
+      },
+      async people() {
+        return check(await db.rpc('store_people')) as StorePerson[];
+      },
+      async setCode(staffId, code) {
+        await storeCall('store_set_code', { p_staff: staffId, p_code: code });
+      },
+      async checkCode({ staffId, code }) {
+        await storeCall('store_check_code', { p_staff: staffId, p_code: code });
+      },
+      async consumables() {
+        return check(await db.from('consumables').select('*').eq('active', true).order('category').order('name')) as Tables['consumables'][];
+      },
+      async tools() {
+        return check(await db.rpc('store_tools')) as StoreTool[];
+      },
+      async take({ staffId, code }, lines, jobNumber, note) {
+        await storeCall('store_take', { p_staff: staffId, p_code: code, p_lines: lines, p_job_number: jobNumber, p_note: note });
+      },
+      async toolOut({ staffId, code }, toolId, jobNumber) {
+        await storeCall('store_tool_out', { p_staff: staffId, p_code: code, p_tool: toolId, p_job_number: jobNumber });
+      },
+      async toolIn({ staffId, code }, toolId) {
+        await storeCall('store_tool_in', { p_staff: staffId, p_code: code, p_tool: toolId });
+      },
+      async takes({ from, to }) {
+        const { start, end } = brisbaneRange(from, to);
+        const rows = check(await db.from('consumable_takes')
+          .select('id, quantity, note, taken_at, consumables(name, category, unit), staff:staff_id(name), jobs(job_number)')
+          .gte('taken_at', start).lt('taken_at', end).order('taken_at', { ascending: false })) as unknown as
+          { id: number; quantity: number; note: string | null; taken_at: string;
+            consumables: { name: string; category: string | null; unit: string } | null;
+            staff: { name: string } | null; jobs: { job_number: string } | null }[];
+        return rows.map((r): ConsumableTake => ({
+          id: r.id, quantity: Number(r.quantity), note: r.note, taken_at: r.taken_at,
+          consumable: r.consumables?.name ?? '', category: r.consumables?.category ?? null, unit: r.consumables?.unit ?? '',
+          staff_name: r.staff?.name ?? '', job_number: r.jobs?.job_number ?? null,
+        }));
+      },
+      async toolMoves({ from, to }) {
+        const { start, end } = brisbaneRange(from, to);
+        const rows = check(await db.from('tool_signouts')
+          .select('id, out_at, returned_at, tools(name, tag), staff:staff_id(name), back:returned_by(name), jobs(job_number)')
+          .or(`returned_at.is.null,and(out_at.gte."${start}",out_at.lt."${end}")`)
+          .order('out_at', { ascending: false })) as unknown as
+          { id: number; out_at: string; returned_at: string | null; tools: { name: string; tag: string | null } | null;
+            staff: { name: string } | null; back: { name: string } | null; jobs: { job_number: string } | null }[];
+        return rows.map((r): ToolMove => ({
+          id: r.id, out_at: r.out_at, returned_at: r.returned_at, tool: r.tools?.name ?? '', tag: r.tools?.tag ?? null,
+          staff_name: r.staff?.name ?? '', returned_by_name: r.back?.name ?? null, job_number: r.jobs?.job_number ?? null,
+        }));
+      },
+      async resetCode(staffId) {
+        check(await db.rpc('store_reset_code', { p_staff: staffId }));
+      },
+    },
 
     async signIn(mobileInput, pin) {
       const mobile = normaliseMobile(mobileInput);
@@ -104,7 +174,7 @@ export function supabaseApi(url: string, anonKey: string): Api {
       const { error } = await db.auth.signInWithPassword({ email: emailFor(mobile), password: pin });
       if (error) throw new Error('Mobile number or PIN is wrong.');
       const s = await loadMe();
-      if (!s) throw new Error('This sign-in is not active. Ask the office.');
+      if (!s || s === 'store') throw new Error('This sign-in is not active. Ask the office.');
       return s;
     },
 
